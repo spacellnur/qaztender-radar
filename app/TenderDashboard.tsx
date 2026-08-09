@@ -111,7 +111,7 @@ function scoreLabel(score: number) {
   return "Высокий риск";
 }
 
-export default function TenderDashboard() {
+export default function TenderDashboard({ username }: { username: string }) {
   const [query, setQuery] = useState("");
   const [region, setRegion] = useState("Все регионы");
   const [category, setCategory] = useState("Все работы");
@@ -150,10 +150,13 @@ export default function TenderDashboard() {
         </a>
         <div className="topbar-actions">
           <span className="demo-pill"><span aria-hidden="true" /> Демо-данные</span>
-          <button className="profile-button" type="button" title="Профиль компании будет подключён позже">
-            <span>СК</span>
-            <span className="profile-copy"><strong>СтройКомпания</strong><small>Профиль не заполнен</small></span>
-          </button>
+          <div className="account-block">
+            <div className="profile-button" title={username}>
+              <span>ГА</span>
+              <span className="profile-copy"><strong>Главный администратор</strong><small>{username}</small></span>
+            </div>
+            <button className="logout-button" type="button" onClick={async () => { await fetch("/api/auth/logout", { method: "POST" }); window.location.assign("/login"); }}>Выйти</button>
+          </div>
         </div>
       </header>
 
@@ -231,7 +234,6 @@ export default function TenderDashboard() {
               <article
                 className={`tender-card ${activeTender?.id === tender.id ? "active" : ""}`}
                 key={tender.id}
-                onClick={() => setActiveId(tender.id)}
               >
                 <div className="rank">{String(index + 1).padStart(2, "0")}</div>
                 <div className="score-block">
@@ -258,7 +260,7 @@ export default function TenderDashboard() {
                     <b>{tender.daysLeft} дн.</b>
                     <span>{tender.deadline}</span>
                   </div>
-                  <button type="button" aria-label={`Открыть ${tender.title}`}>Подробнее <span>↗</span></button>
+                  <button type="button" onClick={() => setActiveId(tender.id)} aria-label={`Открыть ${tender.title}`}>Подробнее <span>↗</span></button>
                 </div>
               </article>
             ))}
