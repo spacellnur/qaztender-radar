@@ -13,7 +13,7 @@ The first version will let a construction-company owner open a private web dashb
 - [x] (2026-08-09 21:42Z) Replaced the starter with the responsive Russian-language tender dashboard and five demonstration scoring records.
 - [x] (2026-08-09 21:42Z) Added working search, region, category, and sorting interactions with accessible controls and an empty state.
 - [x] (2026-08-09 21:44Z) Replaced starter metadata and tests, removed disposable preview code and dependency, then completed the production build and rendered HTML test.
-- [ ] Create the site-specific social preview image, publish the validated version privately, and record the deployed result (completed: generated and integrated `public/og.png`; remaining: create the source commit required by Sites and publish after the user authorizes commits).
+- [x] (2026-08-09 21:53Z) Created the site-specific social preview image, committed the validated source with user authorization, and published version 1 privately.
 
 ## Surprises & Discoveries
 
@@ -45,7 +45,7 @@ The first version will let a construction-company owner open a private web dashb
 
 ## Outcomes & Retrospective
 
-The local product milestone is complete. The dashboard presents five ranked demonstration tenders, calculates the visible result count and budget, filters by text, region, and work category, sorts by score, budget, or urgency, and explains the selected tender through score components, strengths, and risks. The starter was removed, product metadata and a bespoke social card were added, the production build completed, and the rendered HTML test passed 1 of 1. Private publishing remains pending solely because it requires a Git commit and the user has not yet authorized commits.
+The first product milestone is complete. The dashboard presents five ranked demonstration tenders, calculates the visible result count and budget, filters by text, region, and work category, sorts by score, budget, or urgency, and explains the selected tender through score components, strengths, and risks. The starter was removed, product metadata and a bespoke social card were added, the production build completed, and the rendered HTML test passed 1 of 1. After the user authorized commits, the validated source was saved as Sites version 1 and published privately at `https://qaztender-radar-demo.carmarew.chatgpt.site`.
 
 ## Context and Orientation
 
@@ -71,7 +71,7 @@ All source edits are additive or replace disposable starter files. Dependency in
 
 ## Artifacts and Notes
 
-The production build completed all five vinext build stages and created the deployment output. The rendered HTML test reported `tests 1`, `pass 1`, and `fail 0`. The social preview asset was generated with the built-in ImageGen workflow and saved as `public/og.png`; its exact text is `QazTender Radar` and `Тендеры, которые стоят вашего времени.` The deployed URL is pending commit authorization. The official procurement integration is deliberately deferred until the user provides company criteria and an API token can be configured as a secret.
+The production build completed all five vinext build stages and created the deployment output. The rendered HTML test reported `tests 1`, `pass 1`, and `fail 0`. The social preview asset was generated with the built-in ImageGen workflow and saved as `public/og.png`; its exact text is `QazTender Radar` and `Тендеры, которые стоят вашего времени.` Sites version 1 deployed successfully at `https://qaztender-radar-demo.carmarew.chatgpt.site` with private owner-only access. The official procurement integration is deliberately deferred until the user provides company criteria and an API token can be configured as a secret.
 
 ## Interfaces and Dependencies
 
@@ -80,3 +80,5 @@ The production build completed all five vinext build stages and created the depl
 Revision note (2026-08-09): Created the initial self-contained product plan after confirming the official data source, preparing the Sites application, and recording deferred company inputs.
 
 Revision note (2026-08-09): Recorded the completed dashboard, interactions, product metadata, social card, successful build and test evidence, plus the remaining commit-authorization requirement for private publishing.
+
+Revision note (2026-08-09): Recorded user authorization, the successful private Sites deployment, version number, and final production URL.
