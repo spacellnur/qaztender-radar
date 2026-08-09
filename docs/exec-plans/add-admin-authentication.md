@@ -12,7 +12,7 @@ After this change, the tender dashboard is no longer visible until a user signs 
 - [x] (2026-08-10 03:19Z) Implemented the credential verifier, signed session, login/logout routes, and protected page.
 - [x] (2026-08-10 03:19Z) Added the login interface and authenticated account controls.
 - [x] (2026-08-10 03:24Z) Built and tested unauthorized, invalid-login, valid-login, and logout behavior.
-- [ ] Stored credentials as deployment secrets; publishing the validated private version remains.
+- [x] (2026-08-10 03:28Z) Stored credentials as deployment secrets and published the validated private version.
 
 ## Surprises & Discoveries
 
@@ -31,7 +31,7 @@ After this change, the tender dashboard is no longer visible until a user signs 
 
 ## Outcomes & Retrospective
 
-The complete authentication flow is implemented and validated locally. Deployment remains before the user-visible milestone is complete.
+The authentication milestone is complete. Anonymous visitors now reach the Russian login screen, the configured owner account receives the “Главный администратор” role, authenticated sessions open the tender dashboard, and logout revokes browser access. The credential verifier stores no plaintext password, and the production runtime received only secret environment entries. Version 2 was deployed privately at `https://qaztender-radar-demo.carmarew.chatgpt.site`. Future tender-specialist and guest accounts remain intentionally deferred until their permissions and storage model are defined.
 
 ## Context and Orientation
 
@@ -55,7 +55,7 @@ Builds, tests, and secret updates are repeatable. No plaintext credential is wri
 
 ## Artifacts and Notes
 
-ESLint completed without errors. The production build generated four routes: `/`, `/login`, `/api/auth/login`, `/api/auth/logout`, and `/api/auth/session`. The rendered-worker suite reported three tests passed and zero failed, covering anonymous redirect, invalid credentials, authenticated dashboard rendering, secure cookie attributes, and logout. Secret values and password-derived material are not copied into this document.
+ESLint completed without errors. The production build generated the protected page, login page, and three authentication API routes. The rendered-worker suite reported three tests passed and zero failed, covering anonymous redirect, invalid credentials, authenticated dashboard rendering, secure cookie attributes, and logout. Sites version 2 deployed successfully with environment revision 1. Secret values and password-derived material are not copied into this document.
 
 ## Interfaces and Dependencies
 
@@ -64,3 +64,5 @@ ESLint completed without errors. The production build generated four routes: `/`
 Revision note (2026-08-10): Created the plan after inspecting the existing private dashboard and selecting a secret-backed initial administrator that can evolve into database-backed roles.
 
 Revision note (2026-08-10 03:24Z): Updated implementation progress, local validation evidence, and the remaining deployment step after completing the authenticated flow.
+
+Revision note (2026-08-10 03:28Z): Marked the plan complete and recorded the private version 2 deployment after production reported success with the configured secret revision.
