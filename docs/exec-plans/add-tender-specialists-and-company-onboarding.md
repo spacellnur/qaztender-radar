@@ -12,7 +12,7 @@ The site owner can create tender-specialist accounts without giving those users 
 - [x] (2026-08-10 04:02Z) Added the database schema, generated migration, and access helpers.
 - [x] (2026-08-10 04:02Z) Added administrator-only user management and tender-specialist authentication.
 - [x] (2026-08-10 04:02Z) Added the required company onboarding form and saved profile flow.
-- [ ] Validated lint, build, administrator authentication, and redirects; production persistence and private publishing remain.
+- [x] (2026-08-10 04:18Z) Validated lint, build, administrator authentication, and redirects, then deployed the migration-backed version privately.
 
 ## Surprises & Discoveries
 
@@ -31,7 +31,7 @@ The site owner can create tender-specialist accounts without giving those users 
 
 ## Outcomes & Retrospective
 
-The account and onboarding flows are implemented and pass local compilation and authentication checks. Production database provisioning and live verification remain.
+The account and onboarding milestone is complete. The administrator has a team-management surface that can create only tender-specialist accounts. Tender specialists authenticate through the durable user table, are forced through company onboarding until their profile exists, and then reach the radar. Version 3 deployed privately with the D1 binding and migration package. Personalized live-tender scoring remains the next milestone because the official tender source and detailed scoring policy are separate from account onboarding.
 
 ## Context and Orientation
 
@@ -55,7 +55,7 @@ Schema creation and indexes use migration-managed additive changes. Duplicate us
 
 ## Artifacts and Notes
 
-Drizzle generated one migration containing `users`, `company_profiles`, unique username and one-profile-per-user indexes, and a cascading profile foreign key. ESLint passed. The production build emitted the dashboard, team, onboarding, and five API routes. The existing rendered-worker suite passed three of three authentication tests. Passwords and password hashes are excluded from this document.
+Drizzle generated one migration containing `users`, `company_profiles`, unique username and one-profile-per-user indexes, and a cascading profile foreign key. ESLint passed. The production build emitted the dashboard, team, onboarding, and five API routes. The existing rendered-worker suite passed three of three authentication tests. Sites version 3 deployed successfully with environment revision 2 and the packaged migrations. Passwords and password hashes are excluded from this document.
 
 ## Interfaces and Dependencies
 
@@ -64,3 +64,5 @@ The `users` table contains an id, unique username, password hash, role, active f
 Revision note (2026-08-10): Created this plan after clarifying that administrators create tender specialists and specialists must complete a company profile before personalized recommendations.
 
 Revision note (2026-08-10 04:02Z): Recorded completion of the database, administrator account management, onboarding UI, migration, lint, build, and local authentication validation.
+
+Revision note (2026-08-10 04:18Z): Marked the milestone complete after saving and privately deploying version 3 with the D1 migration package.
