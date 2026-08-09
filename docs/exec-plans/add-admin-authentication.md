@@ -19,6 +19,9 @@ After this change, the tender dashboard is no longer visible until a user signs 
 - Observation: The deployed site already has owner-only Sites access, but the requested product login is a separate application-level gate.
   Evidence: `.openai/hosting.json` identifies an existing private Sites project while the current `app/page.tsx` renders without checking a product session.
 
+- Observation: The initial 210,000-iteration PBKDF2 hash exceeded the production request execution allowance even though it passed local tests.
+  Evidence: Production login failed before returning JSON, while the same credentials succeeded immediately after rotating the secret to the application's accepted 100,000-iteration floor and deploying environment revision 2.
+
 ## Decision Log
 
 - Decision: Keep the first administrator in runtime secrets and encode the authorization role in the signed session.
@@ -29,9 +32,13 @@ After this change, the tender dashboard is no longer visible until a user signs 
   Rationale: These primitives are available in Cloudflare Workers and Node, require no additional dependency, and permit constant-time comparison of derived bytes.
   Date/Author: 2026-08-10 / Codex
 
+- Decision: Use 100,000 PBKDF2 iterations for this Sites runtime and retain the source-level minimum check at that value.
+  Rationale: This remains a deliberately slow password derivation while fitting the observed production execution allowance. Raising it to 210,000 caused the request to terminate before a response.
+  Date/Author: 2026-08-10 / Codex
+
 ## Outcomes & Retrospective
 
-The authentication milestone is complete. Anonymous visitors now reach the Russian login screen, the configured owner account receives the “Главный администратор” role, authenticated sessions open the tender dashboard, and logout revokes browser access. The credential verifier stores no plaintext password, and the production runtime received only secret environment entries. Version 2 was deployed privately at `https://qaztender-radar-demo.carmarew.chatgpt.site`. Future tender-specialist and guest accounts remain intentionally deferred until their permissions and storage model are defined.
+The authentication milestone is complete. Anonymous visitors now reach the Russian login screen, the configured owner account receives the “Главный администратор” role, authenticated sessions open the tender dashboard, and logout revokes browser access. The credential verifier stores no plaintext password, and the production runtime received only secret environment entries. Version 2 was deployed privately at `https://qaztender-radar-demo.carmarew.chatgpt.site`. After correcting the production-compatible password-derivation cost, a live browser verification successfully reached the dashboard as the configured administrator. Future tender-specialist and guest accounts remain intentionally deferred until their permissions and storage model are defined.
 
 ## Context and Orientation
 
@@ -66,3 +73,5 @@ Revision note (2026-08-10): Created the plan after inspecting the existing priva
 Revision note (2026-08-10 03:24Z): Updated implementation progress, local validation evidence, and the remaining deployment step after completing the authenticated flow.
 
 Revision note (2026-08-10 03:28Z): Marked the plan complete and recorded the private version 2 deployment after production reported success with the configured secret revision.
+
+Revision note (2026-08-10 03:34Z): Recorded the production PBKDF2 execution-limit discovery, secret rotation, environment revision 2 deployment, and successful live administrator login.
