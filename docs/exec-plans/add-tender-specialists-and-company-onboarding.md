@@ -13,6 +13,7 @@ The site owner can create tender-specialist accounts without giving those users 
 - [x] (2026-08-10 04:02Z) Added administrator-only user management and tender-specialist authentication.
 - [x] (2026-08-10 04:02Z) Added the required company onboarding form and saved profile flow.
 - [x] (2026-08-10 04:18Z) Validated lint, build, administrator authentication, and redirects, then deployed the migration-backed version privately.
+- [x] (2026-08-10 04:42Z) Refined company onboarding with optional details, selectable regions and activity taxonomy, and one optional/unlimited budget limit; lint, build, and authentication tests pass.
 
 ## Surprises & Discoveries
 
@@ -27,6 +28,14 @@ The site owner can create tender-specialist accounts without giving those users 
 
 - Decision: Store users and one company profile per tender specialist in D1.
   Rationale: Accounts and company details must survive sessions, require uniqueness and ownership checks, and will later participate in server-side tender matching.
+  Date/Author: 2026-08-10 / Codex
+
+- Decision: Require company name, at least one region, and at least one business direction; make BIN, experience, licenses, employee count, and budget optional.
+  Rationale: These three inputs are sufficient to begin broad tender matching, while forcing incomplete legal or capacity data would block legitimate users from onboarding.
+  Date/Author: 2026-08-10 / Codex
+
+- Decision: Represent budget as one maximum tender amount, with an explicit unlimited option.
+  Rationale: Users naturally know the largest contract they can handle; a minimum-plus-maximum range added unnecessary friction at this stage.
   Date/Author: 2026-08-10 / Codex
 
 ## Outcomes & Retrospective
@@ -66,3 +75,5 @@ Revision note (2026-08-10): Created this plan after clarifying that administrato
 Revision note (2026-08-10 04:02Z): Recorded completion of the database, administrator account management, onboarding UI, migration, lint, build, and local authentication validation.
 
 Revision note (2026-08-10 04:18Z): Marked the milestone complete after saving and privately deploying version 3 with the D1 migration package.
+
+Revision note (2026-08-10 04:42Z): Simplified onboarding after user feedback, documented the reduced required-field set and unified budget decision, and recorded successful validation.
