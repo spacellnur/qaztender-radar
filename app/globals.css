@@ -39,6 +39,38 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .account-block { display: flex; align-items: center; gap: 12px; }
 .logout-button { border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink); padding: 8px 12px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
 .logout-button:hover { border-color: var(--accent); color: var(--accent-dark); }
+.team-link { color: var(--ink); font-size: 12px; font-weight: 750; text-decoration: none; }
+.team-link:hover { color: var(--accent-dark); }
+
+.management-shell, .onboarding-shell { min-height: 100vh; padding: clamp(24px, 5vw, 68px); background: #eef0eb; }
+.management-shell { max-width: 1180px; margin: auto; }
+.management-head { display: grid; grid-template-columns: 150px 1fr; align-items: end; margin-bottom: 34px; }
+.management-head a { color: var(--muted); text-decoration: none; font-size: 13px; }
+.management-head p { margin: 0 0 6px; color: var(--accent-dark); font-size: 11px; font-weight: 800; letter-spacing: .09em; }
+.management-head h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); letter-spacing: -.05em; }
+.management-grid { display: grid; grid-template-columns: minmax(280px, 390px) 1fr; gap: 24px; }
+.panel-form, .team-list, .onboarding-card { background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 28px; }
+.panel-form { display: grid; gap: 16px; align-content: start; }
+.panel-form h2, .team-title h2 { margin: 0; }
+.panel-form > p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.panel-form label, .company-form label { display: grid; gap: 7px; font-size: 12px; font-weight: 750; }
+.panel-form input, .company-form input, .company-form textarea { border: 1px solid var(--line); border-radius: 10px; padding: 12px; font: inherit; background: #fbfcfa; }
+.panel-form button, .company-form button { border: 0; border-radius: 10px; padding: 13px; background: var(--ink); color: #fff; font: inherit; font-weight: 800; cursor: pointer; }
+.form-message { color: var(--accent-dark) !important; }
+.team-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.team-title span { background: var(--ink); color: #fff; border-radius: 99px; padding: 5px 9px; font-size: 11px; }
+.team-list article { display: grid; grid-template-columns: 40px 1fr auto; gap: 12px; align-items: center; padding: 15px 0; border-top: 1px solid var(--line); }
+.team-avatar { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; background: #e8ebe5; font-weight: 850; }
+.team-list article > div:nth-child(2) { display: grid; gap: 3px; }
+.team-list small, .empty-copy { color: var(--muted); }
+.status-ready, .status-wait { border-radius: 99px; padding: 6px 9px; font-size: 10px; font-weight: 800; }
+.status-ready { background: #e6f3df; color: #356423; }.status-wait { background: #fff1d7; color: #8a5a0b; }
+.onboarding-shell { display: grid; place-items: center; }
+.onboarding-card { width: min(100%, 820px); padding: clamp(26px, 5vw, 48px); }
+.onboarding-top { display: flex; align-items: center; gap: 12px; }.onboarding-top > span { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 11px; background: var(--ink); color: #fff; font-weight: 850; }.onboarding-top div { display: grid; gap: 2px; }.onboarding-top small { color: var(--muted); font-size: 9px; letter-spacing: .08em; }
+.onboarding-card h1 { margin: 0; font-size: clamp(34px, 7vw, 58px); letter-spacing: -.05em; }.onboarding-intro { max-width: 620px; color: var(--muted); line-height: 1.55; }
+.company-form { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 28px; }.company-form .wide { grid-column: 1 / -1; }.company-form textarea { min-height: 82px; resize: vertical; }.company-form button:disabled { opacity: .6; }
+@media (max-width: 720px) { .management-head { grid-template-columns: 1fr; gap: 18px; }.management-grid, .company-form { grid-template-columns: 1fr; }.company-form .wide { grid-column: auto; }.team-list article { grid-template-columns: 40px 1fr; }.team-list article > span { grid-column: 2; justify-self: start; } }
 
 .login-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 15% 10%, #f4f1e8 0, transparent 38%), #e8ebe5; }
 .login-card { width: min(100%, 430px); background: #fff; border: 1px solid var(--line); border-radius: 22px; padding: 38px; box-shadow: 0 24px 70px rgba(28, 34, 27, .12); }

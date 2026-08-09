@@ -111,7 +111,7 @@ function scoreLabel(score: number) {
   return "Высокий риск";
 }
 
-export default function TenderDashboard({ username }: { username: string }) {
+export default function TenderDashboard({ username, role }: { username: string; role: "super_admin" | "tender_specialist" | "guest" }) {
   const [query, setQuery] = useState("");
   const [region, setRegion] = useState("Все регионы");
   const [category, setCategory] = useState("Все работы");
@@ -151,9 +151,10 @@ export default function TenderDashboard({ username }: { username: string }) {
         <div className="topbar-actions">
           <span className="demo-pill"><span aria-hidden="true" /> Демо-данные</span>
           <div className="account-block">
+            {role === "super_admin" && <a className="team-link" href="/admin/users">Команда</a>}
             <div className="profile-button" title={username}>
               <span>ГА</span>
-              <span className="profile-copy"><strong>Главный администратор</strong><small>{username}</small></span>
+              <span className="profile-copy"><strong>{role === "super_admin" ? "Главный администратор" : "Тендерщик"}</strong><small>{username}</small></span>
             </div>
             <button className="logout-button" type="button" onClick={async () => { await fetch("/api/auth/logout", { method: "POST" }); window.location.assign("/login"); }}>Выйти</button>
           </div>

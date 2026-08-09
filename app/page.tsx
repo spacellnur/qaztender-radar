@@ -3,6 +3,7 @@ import TenderDashboard from "./TenderDashboard";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { readSessionToken, SESSION_COOKIE } from "./auth";
+import { companyProfileExists } from "./db";
 
 export const metadata: Metadata = {
   title: "QazTender Radar — тендеры для строительной компании",
@@ -14,5 +15,6 @@ export default async function Home() {
   const cookieStore = await cookies();
   const session = await readSessionToken(cookieStore.get(SESSION_COOKIE)?.value);
   if (!session) redirect("/login");
-  return <TenderDashboard username={session.username} />;
+  if (session.role === "tender_specialist" && session.userId && !(await companyProfileExists(session.userId))) redirect("/onboarding/company");
+  return <TenderDashboard username={session.username} role={session.role} />;
 }
