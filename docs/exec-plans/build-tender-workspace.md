@@ -17,7 +17,7 @@ QazTender Radar must progress from a searchable announcement feed into a daily w
 - [x] (2026-08-10 15:37Z) Validated Milestone 3 locally with a successful production build, 10 passing application and matching tests, and clean lint. No schema migration was needed because the existing company profile table already stores all edited fields.
 - [ ] Milestone 4: ingest lots, ENS TRU, delivery location, documents, and change history after official API access is available. Pre-token foundation deployed: official schema confirmed; durable detail tables, protected read/on-demand synchronization, history capture, and honest empty-state tabs are live. Remaining: one real API round-trip after the token arrives.
 - [x] (2026-08-10 15:46Z) Validated the Milestone 4 pre-token foundation with an inspected additive three-table migration, successful production build, 11 passing tests, and clean lint.
-- [ ] Milestone 5: add reusable checklists, team assignments, buyer/winner analytics, and grounded document analysis. Team checklist slice completed locally; buyer/winner analytics and grounded document analysis remain gated by official history and files. Remaining for this slice: private deployment.
+- [ ] Milestone 5: add reusable checklists, team assignments, buyer/winner analytics, and grounded document analysis. Team checklist slice deployed; buyer/winner analytics and grounded document analysis remain gated by official history and files.
 - [x] (2026-08-10 15:54Z) Validated the Milestone 5 checklist slice with an inspected additive task migration, successful production build, 12 passing tests, and clean lint.
 
 ## Surprises & Discoveries
@@ -78,7 +78,7 @@ Milestone 3 is complete and deployed. Tender specialists can reopen their existi
 
 The Milestone 4 pre-token foundation is deployed. D1 can now store normalized lots, files, and append-only synchronization history. The protected endpoint reads stored details for any signed-in account and allows only the super administrator to request one official announcement's details. The official query uses the confirmed announcement-id filter and nested files. The selected-tender panel exposes overview, lot, document, and history tabs with truthful empty states. The migration, build, eleven tests, lint, archive validation, database migration, and private deployment succeeded. Only the first authenticated official API round-trip remains.
 
-The Milestone 5 checklist slice is complete locally. A shared `Работа` tab now supports an idempotent six-step standard template, custom tasks, active-specialist assignment, deadlines, deletion, and a completed-versus-total progress indicator. Administrator and specialist permissions are enforced on the server; specialists can change only the completion state of tasks assigned to their own user id. The additive task migration, build, twelve tests, and lint pass. Analytics and document assistance remain truthfully deferred until official history and files exist; private deployment of the checklist remains.
+The Milestone 5 checklist slice is deployed. A shared `Работа` tab now supports an idempotent six-step standard template, custom tasks, active-specialist assignment, deadlines, deletion, and a completed-versus-total progress indicator. Administrator and specialist permissions are enforced on the server; specialists can change only the completion state of tasks assigned to their own user id. The additive task migration, build, twelve tests, lint, archive validation, database migration, and private deployment succeeded. Analytics and document assistance remain truthfully deferred until official history and files exist.
 
 ## Context and Orientation
 
@@ -204,3 +204,5 @@ Revision note (2026-08-10 15:48Z): Deployed the Milestone 4 pre-token foundation
 Revision note (2026-08-10 15:52Z): Started Milestone 5 with the collaborative checklist slice. Defined shared task ownership, administrator controls, specialist completion permissions, a reusable standard template, and the deliberate deferral of analytics and document assistance.
 
 Revision note (2026-08-10 15:54Z): Recorded the completed local checklist slice, inspected task migration, server-enforced role boundaries, and successful build, twelve-test, and lint evidence. Deployment remains for this slice.
+
+Revision note (2026-08-10 15:56Z): Deployed the collaborative checklist slice. Milestone 5 remains open only for buyer/winner analytics and grounded document assistance, both dependent on official source data.
