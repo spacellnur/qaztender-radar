@@ -81,6 +81,10 @@ test("administrator sees the token-waiting dashboard and can sign out", async ()
   assert.match(html, /Ожидается API-токен/);
   assert.match(html, /Все регионы/);
   assert.match(html, /Туркестанская область/);
+  assert.match(html, /Расширенный поиск/);
+  assert.match(html, /Номер объявления/);
+  assert.match(html, /Заказчик или БИН/);
+  assert.match(html, /Сбросить все фильтры/);
   assert.doesNotMatch(html, /Демо-данные/);
 
   const sync = await request(state, "/api/tenders/sync", { method: "POST", headers: { cookie } });

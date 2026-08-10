@@ -40,6 +40,29 @@ function remainingDays(endDate: number | null, now: number): number | null {
   return Math.ceil((endDate - now) / 86_400_000);
 }
 
+function optionalAmount(value: string): number | null {
+  if (!value.trim()) return null;
+  const amount = Number(value.replace(/\s/g, "").replace(",", "."));
+  return Number.isFinite(amount) && amount >= 0 ? amount : null;
+}
+
+function startOfKazakhstanDate(value: string): number | null {
+  if (!value) return null;
+  const timestamp = Date.parse(`${value}T00:00:00+05:00`);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function endOfKazakhstanDate(value: string): number | null {
+  if (!value) return null;
+  const timestamp = Date.parse(`${value}T23:59:59.999+05:00`);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function yearInKazakhstan(timestamp: number | null): number | null {
+  if (!timestamp) return null;
+  return new Date(timestamp + 5 * 60 * 60 * 1000).getUTCFullYear();
+}
+
 function sourceCopy(status: TenderSourceStatus) {
   if (status.state === "waiting_token") return {
     label: "Ожидается API-токен",
@@ -71,6 +94,17 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus 
   const [budget, setBudget] = useState("all");
   const [deadline, setDeadline] = useState("all");
   const [constructionOnly, setConstructionOnly] = useState(false);
+  const [announcementNumber, setAnnouncementNumber] = useState("");
+  const [customer, setCustomer] = useState("");
+  const [method, setMethod] = useState("all");
+  const [status, setStatus] = useState("all");
+  const [amountFrom, setAmountFrom] = useState("");
+  const [amountTo, setAmountTo] = useState("");
+  const [publishedFrom, setPublishedFrom] = useState("");
+  const [publishedTo, setPublishedTo] = useState("");
+  const [endingFrom, setEndingFrom] = useState("");
+  const [endingTo, setEndingTo] = useState("");
+  const [financialYear, setFinancialYear] = useState("all");
   const [sort, setSort] = useState("deadline");
   const [activeId, setActiveId] = useState(tenders[0]?.externalId ?? "");
   const [syncing, setSyncing] = useState(false);
@@ -81,21 +115,65 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus 
     [tenders],
   );
 
+  const methodOptions = useMemo(
+    () => Array.from(new Set(tenders.map((tender) => tender.methodName).filter((value) => value && value !== "Не указан"))).sort(),
+    [tenders],
+  );
+
+  const statusOptions = useMemo(
+    () => Array.from(new Set(tenders.map((tender) => tender.statusName).filter((value) => value && value !== "Не указан"))).sort(),
+    [tenders],
+  );
+
+  const financialYearOptions = useMemo(
+    () => Array.from(new Set(tenders.map((tender) => yearInKazakhstan(tender.publishDate ?? tender.endDate)).filter((value): value is number => value !== null))).sort((left, right) => right - left),
+    [tenders],
+  );
+
+  const advancedFilterCount = [
+    announcementNumber.trim(), customer.trim(), method !== "all", status !== "all",
+    amountFrom.trim(), amountTo.trim(), publishedFrom, publishedTo, endingFrom, endingTo,
+    financialYear !== "all",
+  ].filter(Boolean).length;
+
+  const hasAnyFilter = Boolean(
+    query.trim() || region !== "all" || subject !== "all" || budget !== "all" || deadline !== "all" || constructionOnly || advancedFilterCount,
+  );
+
   const visibleTenders = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("ru");
+    const normalizedAnnouncement = announcementNumber.trim().toLocaleLowerCase("ru");
+    const normalizedCustomer = customer.trim().toLocaleLowerCase("ru");
+    const minimumAmount = optionalAmount(amountFrom);
+    const maximumAmount = optionalAmount(amountTo);
+    const publicationStart = startOfKazakhstanDate(publishedFrom);
+    const publicationEnd = endOfKazakhstanDate(publishedTo);
+    const endingStart = startOfKazakhstanDate(endingFrom);
+    const endingEnd = endOfKazakhstanDate(endingTo);
     return tenders
-      .filter((tender) => !normalized || `${tender.title} ${tender.buyer} ${tender.numberAnno}`.toLocaleLowerCase("ru").includes(normalized))
+      .filter((tender) => !normalized || `${tender.title} ${tender.buyer} ${tender.customerBin} ${tender.numberAnno}`.toLocaleLowerCase("ru").includes(normalized))
       .filter((tender) => region === "all" || tender.regionCode === region)
       .filter((tender) => subject === "all" || tender.subjectType === subject)
       .filter((tender) => budget === "all" || tender.budget <= Number(budget))
       .filter((tender) => !constructionOnly || tender.isConstructionWork)
       .filter((tender) => deadline === "all" || Boolean(tender.endDate && tender.endDate >= referenceTime && tender.endDate <= referenceTime + Number(deadline) * 86_400_000))
+      .filter((tender) => !normalizedAnnouncement || tender.numberAnno.toLocaleLowerCase("ru").includes(normalizedAnnouncement))
+      .filter((tender) => !normalizedCustomer || `${tender.buyer} ${tender.customerBin}`.toLocaleLowerCase("ru").includes(normalizedCustomer))
+      .filter((tender) => method === "all" || tender.methodName === method)
+      .filter((tender) => status === "all" || tender.statusName === status)
+      .filter((tender) => minimumAmount === null || tender.budget >= minimumAmount)
+      .filter((tender) => maximumAmount === null || tender.budget <= maximumAmount)
+      .filter((tender) => publicationStart === null || Boolean(tender.publishDate && tender.publishDate >= publicationStart))
+      .filter((tender) => publicationEnd === null || Boolean(tender.publishDate && tender.publishDate <= publicationEnd))
+      .filter((tender) => endingStart === null || Boolean(tender.endDate && tender.endDate >= endingStart))
+      .filter((tender) => endingEnd === null || Boolean(tender.endDate && tender.endDate <= endingEnd))
+      .filter((tender) => financialYear === "all" || yearInKazakhstan(tender.publishDate ?? tender.endDate) === Number(financialYear))
       .sort((left, right) => {
         if (sort === "budget") return right.budget - left.budget;
         if (sort === "published") return (right.publishDate ?? 0) - (left.publishDate ?? 0);
         return (left.endDate ?? Number.MAX_SAFE_INTEGER) - (right.endDate ?? Number.MAX_SAFE_INTEGER);
       });
-  }, [tenders, query, region, subject, budget, deadline, constructionOnly, sort, referenceTime]);
+  }, [tenders, query, region, subject, budget, deadline, constructionOnly, announcementNumber, customer, method, status, amountFrom, amountTo, publishedFrom, publishedTo, endingFrom, endingTo, financialYear, sort, referenceTime]);
 
   const activeTender = visibleTenders.find((tender) => tender.externalId === activeId) ?? visibleTenders[0] ?? null;
   const totalBudget = visibleTenders.reduce((sum, tender) => sum + tender.budget, 0);
@@ -108,6 +186,17 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus 
     setBudget("all");
     setDeadline("all");
     setConstructionOnly(false);
+    setAnnouncementNumber("");
+    setCustomer("");
+    setMethod("all");
+    setStatus("all");
+    setAmountFrom("");
+    setAmountTo("");
+    setPublishedFrom("");
+    setPublishedTo("");
+    setEndingFrom("");
+    setEndingTo("");
+    setFinancialYear("all");
   }
 
   async function synchronize() {
@@ -181,6 +270,29 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus 
             <label><span className="sr-only">Максимальный бюджет</span><select value={budget} onChange={(event) => setBudget(event.target.value)}><option value="all">Любой бюджет</option><option value="10000000">До 10 млн ₸</option><option value="50000000">До 50 млн ₸</option><option value="100000000">До 100 млн ₸</option><option value="500000000">До 500 млн ₸</option><option value="1000000000">До 1 млрд ₸</option></select></label>
             <label><span className="sr-only">Срок подачи</span><select value={deadline} onChange={(event) => setDeadline(event.target.value)}><option value="all">Любой срок</option><option value="3">До 3 дней</option><option value="7">До 7 дней</option><option value="14">До 14 дней</option><option value="30">До 30 дней</option></select></label>
             <label className="filter-toggle"><input type="checkbox" checked={constructionOnly} onChange={(event) => setConstructionOnly(event.target.checked)} /><span>Только строительные работы</span></label>
+            <details className="advanced-filters">
+              <summary>
+                <span>Расширенный поиск</span>
+                <small>{advancedFilterCount ? `Активно: ${advancedFilterCount}` : "Номер, заказчик, сумма и даты"}</small>
+              </summary>
+              <div className="advanced-filter-grid">
+                <label><span>Номер объявления</span><input value={announcementNumber} onChange={(event) => setAnnouncementNumber(event.target.value)} placeholder="Например, 15123456-1" /></label>
+                <label><span>Заказчик или БИН</span><input value={customer} onChange={(event) => setCustomer(event.target.value)} placeholder="Название или 12 цифр" /></label>
+                <label><span>Способ закупки</span><select value={method} onChange={(event) => setMethod(event.target.value)}><option value="all">Все способы</option>{methodOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
+                <label><span>Статус</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">Все статусы</option>{statusOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
+                <label><span>Сумма от, ₸</span><input type="number" min="0" inputMode="decimal" value={amountFrom} onChange={(event) => setAmountFrom(event.target.value)} placeholder="0" /></label>
+                <label><span>Сумма до, ₸</span><input type="number" min="0" inputMode="decimal" value={amountTo} onChange={(event) => setAmountTo(event.target.value)} placeholder="Без ограничения" /></label>
+                <label><span>Опубликовано с</span><input type="date" value={publishedFrom} onChange={(event) => setPublishedFrom(event.target.value)} /></label>
+                <label><span>Опубликовано по</span><input type="date" value={publishedTo} onChange={(event) => setPublishedTo(event.target.value)} /></label>
+                <label><span>Приём заявок заканчивается с</span><input type="date" value={endingFrom} onChange={(event) => setEndingFrom(event.target.value)} /></label>
+                <label><span>Приём заявок заканчивается по</span><input type="date" value={endingTo} onChange={(event) => setEndingTo(event.target.value)} /></label>
+                <label><span>Финансовый год</span><select value={financialYear} onChange={(event) => setFinancialYear(event.target.value)}><option value="all">Все годы</option>{financialYearOptions.map((year) => <option value={year} key={year}>{year}</option>)}</select></label>
+              </div>
+            </details>
+            <div className="filter-actions">
+              <span>Результаты обновляются сразу</span>
+              <button type="button" onClick={resetFilters} disabled={!hasAnyFilter}>Сбросить все фильтры</button>
+            </div>
           </div>
 
           <div className="feed-heading">
