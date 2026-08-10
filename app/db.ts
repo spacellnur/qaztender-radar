@@ -1,5 +1,5 @@
 import type { AppRole } from "./auth";
-import type { TenderRecord, TenderSourceStatus, TenderStage, TenderWorkflowEntry } from "./tender-types";
+import type { AlertFrequency, SavedSearch, TenderRecord, TenderSearchFilters, TenderSourceStatus, TenderStage, TenderWorkflowEntry } from "./tender-types";
 
 export type DatabaseUser = { id: string; username: string; passwordHash: string; role: AppRole; isActive: number };
 
@@ -81,6 +81,39 @@ export async function saveTenderWorkflow(ownerKey: string, tenderId: string, isF
     ON CONFLICT(owner_key, tender_id) DO UPDATE SET is_favorite=excluded.is_favorite, stage=excluded.stage, updated_at=excluded.updated_at`)
     .bind(crypto.randomUUID(), ownerKey, tenderId, isFavorite ? 1 : 0, stage, now, now).run();
   return { tenderId, isFavorite, stage, updatedAt: now };
+}
+
+export async function listSavedSearches(ownerKey: string): Promise<SavedSearch[]> {
+  const binding = db();
+  if (!binding) return [];
+  const result = await binding.prepare(`SELECT id, name, filters, alert_frequency AS alertFrequency, created_at AS createdAt, updated_at AS updatedAt
+    FROM saved_searches WHERE owner_key = ? ORDER BY updated_at DESC`).bind(ownerKey).all<Omit<SavedSearch, "filters"> & { filters: string }>();
+  return (result.results ?? []).flatMap((row) => {
+    try { return [{ ...row, filters: JSON.parse(row.filters) as TenderSearchFilters }]; }
+    catch { return []; }
+  });
+}
+
+export async function saveSavedSearch(ownerKey: string, id: string | null, name: string, filters: TenderSearchFilters, alertFrequency: AlertFrequency): Promise<SavedSearch> {
+  const binding = db();
+  if (!binding) throw new Error("Database is unavailable");
+  const now = Date.now();
+  const savedId = id || crypto.randomUUID();
+  const existing = id ? await binding.prepare("SELECT created_at AS createdAt FROM saved_searches WHERE id = ? AND owner_key = ? LIMIT 1").bind(id, ownerKey).first<{ createdAt: number }>() : null;
+  if (id && !existing) throw new Error("Saved search not found");
+  const createdAt = existing?.createdAt ?? now;
+  await binding.prepare(`INSERT INTO saved_searches (id, owner_key, name, filters, alert_frequency, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET name=excluded.name, filters=excluded.filters, alert_frequency=excluded.alert_frequency, updated_at=excluded.updated_at`)
+    .bind(savedId, ownerKey, name, JSON.stringify(filters), alertFrequency, createdAt, now).run();
+  return { id: savedId, name, filters, alertFrequency, createdAt, updatedAt: now };
+}
+
+export async function deleteSavedSearch(ownerKey: string, id: string): Promise<boolean> {
+  const binding = db();
+  if (!binding) throw new Error("Database is unavailable");
+  const result = await binding.prepare("DELETE FROM saved_searches WHERE id = ? AND owner_key = ?").bind(id, ownerKey).run();
+  return Number(result.meta.changes ?? 0) > 0;
 }
 
 export async function getTenderSourceStatus(configured: boolean): Promise<TenderSourceStatus> {

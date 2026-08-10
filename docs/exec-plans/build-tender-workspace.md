@@ -11,7 +11,8 @@ QazTender Radar must progress from a searchable announcement feed into a daily w
 - [x] (2026-08-10 15:11Z) Reviewed the competitor analysis, durable project memory, authentication model, D1 access layer, current tender dashboard, migration tooling, tests, and Sites deployment requirements.
 - [x] (2026-08-10 15:16Z) Milestone 1: persisted favorites and participation stages per signed-in account, exposed a protected API, and integrated workspace tabs and actions into the dashboard.
 - [x] (2026-08-10 15:19Z) Validated Milestone 1 with an inspected additive migration, successful production build, 6 passing application tests, clean lint, and successful private Sites deployment. A real-tender click-through remains unavailable only because the official feed still awaits its API token.
-- [ ] Milestone 2: add named saved searches and notification preferences, followed by Telegram/email delivery once a real feed can trigger them.
+- [ ] Milestone 2: add named saved searches and notification preferences, followed by Telegram/email delivery once a real feed can trigger them. Completed locally: durable account-owned search presets, restore/delete controls, and `off`/`instant`/`daily` alert frequency. Remaining: private deployment.
+- [x] (2026-08-10 15:29Z) Validated Milestone 2 locally with an inspected additive migration, successful production build, 8 passing application tests, and clean lint.
 - [ ] Milestone 3: make company profiles editable and add explainable tender-to-company matching based only on available evidence.
 - [ ] Milestone 4: ingest lots, ENS TRU, delivery location, documents, and change history after official API access is available.
 - [ ] Milestone 5: add reusable checklists, team assignments, buyer/winner analytics, and grounded document analysis.
@@ -48,9 +49,15 @@ QazTender Radar must progress from a searchable announcement feed into a daily w
   Rationale: Deleting that empty state keeps the table compact and makes reset behavior unambiguous.
   Date/Author: 2026-08-10 / Codex
 
+- Decision: Prepare alert frequency now, but do not collect delivery addresses or claim that messages are already sent.
+  Rationale: Saved searches and `instant` or `daily` preferences are useful durable inputs before the Goszakup feed exists. Email and Telegram destinations should be added only with the actual delivery worker, so the interface remains truthful and stores no unnecessary contact data.
+  Date/Author: 2026-08-10 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete and deployed. The dashboard now has account-specific tabs, favorite actions, stage badges, and a detail-panel stage selector backed by an additive D1 table and protected API. The production build, six application tests, lint, archive validation, database migration, and private production deployment all succeeded. A user can exercise the full persistence round-trip as soon as the official feed contains its first tender; no further code change is required for that scenario.
+
+Milestone 2 is complete locally. The dashboard now exposes `Мои поиски`, captures the entire current filter state, restores it in one action, stores an honest future alert frequency, and lets the owner delete the preset. The new API derives ownership from the signed session, and the additive migration creates only `saved_searches` plus its owner/name and owner/update indexes. The production build, eight application tests, and lint pass; private deployment remains.
 
 ## Context and Orientation
 
@@ -67,6 +74,10 @@ Add a `sessionOwnerKey` helper to `app/auth.ts`. Extend `app/tender-types.ts` wi
 Update `app/page.tsx` to load the current owner's workflow alongside tenders and pass it into `TenderDashboard`. Update `app/TenderDashboard.tsx` with optimistic favorite and stage changes, a visible error message if saving fails, tabs for all, favorites, reviewing, participating, submitted, won, and lost, favorite buttons on cards, stage badges, and a stage selector in the detail panel. An optimistic update means the screen changes immediately and reverts if the server rejects the write. The existing search and advanced filters continue to apply inside the selected workspace tab.
 
 Update `app/globals.css` so the tabs are horizontally scrollable on small screens, favorite controls are keyboard accessible, and stage controls match the existing visual system. Extend `tests/rendered-html.test.mjs` with dashboard-content assertions and protected API tests. Build, test, lint, deploy privately, and update this living plan.
+
+For Milestone 2, add a `saved_searches` D1 table keyed by a server-derived owner key. Each row stores a short user-visible name, a JSON snapshot of every dashboard filter, an alert frequency of `off`, `instant`, or `daily`, and timestamps. The snapshot includes search text, region, procurement type, budget and deadline presets, construction-only mode, announcement number, customer, method, status, amount range, publication and ending date ranges, financial year, and sort order. Add protected GET, POST, and DELETE behavior in `app/api/saved-searches/route.ts`; ownership always comes from the signed session.
+
+Load saved searches in `app/page.tsx` and add a compact `Мои поиски` panel to `app/TenderDashboard.tsx`. A user can name and save the current filter state, restore it in one click, choose whether future matches should be checked immediately or summarized daily, and delete the preset. The panel must explicitly say that delivery will become active after the official source and notification channel are connected. Extend tests for visibility, anonymous rejection, and invalid frequency validation, then generate the migration, build, test, lint, and deploy.
 
 Later milestones are intentionally ordered by dependency. Saved searches need the existing filter model; alerts need saved searches plus live synchronization; explainable matching needs editable company profiles and lot requirements; checklists and AI document analysis need official documents; historical analytics need enough awards and contracts to avoid misleading conclusions.
 
@@ -93,6 +104,8 @@ An authenticated dashboard displays workspace tabs even when there are no tender
 Selecting `Избранные` shows only favorite tenders while retaining search and amount/date filters. Selecting `Участвуем`, `Подано`, `Выиграли`, or `Проиграли` filters by that stage. Each card has an accessible favorite button. The detail panel has a labelled stage selector and displays save errors without silently lying about persistence. Mobile layouts allow the tabs to scroll horizontally and keep action controls usable.
 
 Automated acceptance requires a clean migration, a successful production build, all tests passing, and a clean lint run. Deployment acceptance requires Sites to return `succeeded` with the existing QazTender Radar production URL.
+
+Milestone 2 acceptance is observable without live tenders: an authenticated user can set filters, save them under a name, change the alert frequency, reload, restore the filters, and delete the preset. Another account cannot read, edit, or delete that row because every query includes its server-derived owner key. Anonymous requests return 403, malformed names or alert frequencies return 400, and the UI never says that Telegram or email delivery is active.
 
 ## Idempotence and Recovery
 
@@ -130,3 +143,7 @@ Revision note (2026-08-10 15:11Z): Created the long-lived implementation plan fr
 Revision note (2026-08-10 15:16Z): Recorded the completed local implementation, the independent favorite/stage correction, the generated migration, and successful build, test, and lint evidence. Deployment remains the only unfinished part of Milestone 1.
 
 Revision note (2026-08-10 15:19Z): Closed Milestone 1 after successful private production deployment. Noted that the only deferred manual scenario requires a real tender from the still-pending official API feed.
+
+Revision note (2026-08-10 15:24Z): Started Milestone 2. Defined the saved-filter snapshot, account ownership, honest pre-delivery alert preferences, API behavior, interface, and acceptance criteria.
+
+Revision note (2026-08-10 15:29Z): Recorded the completed local Milestone 2 implementation, inspected migration, and successful build, eight-test, and lint evidence. Deployment is the remaining checkpoint.

@@ -42,3 +42,35 @@ export type TenderWorkflowEntry = {
   stage: TenderStage;
   updatedAt: number;
 };
+
+export type AlertFrequency = "off" | "instant" | "daily";
+
+export type TenderSearchFilters = {
+  query: string;
+  region: string;
+  subject: string;
+  budget: string;
+  deadline: string;
+  constructionOnly: boolean;
+  announcementNumber: string;
+  customer: string;
+  method: string;
+  status: string;
+  amountFrom: string;
+  amountTo: string;
+  publishedFrom: string;
+  publishedTo: string;
+  endingFrom: string;
+  endingTo: string;
+  financialYear: string;
+  sort: string;
+};
+
+export type SavedSearch = {
+  id: string;
+  name: string;
+  filters: TenderSearchFilters;
+  alertFrequency: AlertFrequency;
+  createdAt: number;
+  updatedAt: number;
+};

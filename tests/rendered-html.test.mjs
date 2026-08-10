@@ -88,6 +88,9 @@ test("administrator sees the token-waiting dashboard and can sign out", async ()
   assert.match(html, /Избранные/);
   assert.match(html, /Участвуем/);
   assert.match(html, /Заявка подана/);
+  assert.match(html, /Мои поиски/);
+  assert.match(html, /Сохранить текущие фильтры/);
+  assert.match(html, /Telegram или email/);
   assert.doesNotMatch(html, /Демо-данные/);
 
   const sync = await request(state, "/api/tenders/sync", { method: "POST", headers: { cookie } });
@@ -125,6 +128,24 @@ test("tender workflow rejects unsupported stages before database access", async 
     method: "PUT",
     headers: { "content-type": "application/json", cookie },
     body: JSON.stringify({ tenderId: "123", isFavorite: true, stage: "maybe" }),
+  });
+  assert.equal(response.status, 400);
+});
+
+test("saved search endpoints require authentication", async () => {
+  const state = await loadWorker();
+  assert.equal((await request(state, "/api/saved-searches")).status, 403);
+  assert.equal((await request(state, "/api/saved-searches", { method: "POST" })).status, 403);
+  assert.equal((await request(state, "/api/saved-searches?id=example", { method: "DELETE" })).status, 403);
+});
+
+test("saved searches reject malformed alert settings before database access", async () => {
+  const state = await loadWorker();
+  const cookie = await adminCookie(state);
+  const response = await request(state, "/api/saved-searches", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ name: "Туркестан", alertFrequency: "sometimes", filters: {} }),
   });
   assert.equal(response.status, 400);
 });

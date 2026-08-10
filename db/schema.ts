@@ -71,6 +71,19 @@ export const tenderWorkflow = sqliteTable("tender_workflow", {
   index("idx_tender_workflow_owner_stage").on(table.ownerKey, table.stage),
 ]);
 
+export const savedSearches = sqliteTable("saved_searches", {
+  id: text("id").primaryKey(),
+  ownerKey: text("owner_key").notNull(),
+  name: text("name").notNull(),
+  filters: text("filters").notNull(),
+  alertFrequency: text("alert_frequency", { enum: ["off", "instant", "daily"] }).notNull().default("off"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("idx_saved_searches_owner_name").on(table.ownerKey, table.name),
+  index("idx_saved_searches_owner_updated_at").on(table.ownerKey, table.updatedAt),
+]);
+
 export const tenderSyncRuns = sqliteTable("tender_sync_runs", {
   id: text("id").primaryKey(),
   status: text("status", { enum: ["running", "succeeded", "failed"] }).notNull(),

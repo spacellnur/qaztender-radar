@@ -138,6 +138,24 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .workspace-tabs button.active { border-color: var(--ink); background: var(--ink); color: white; }
 .workspace-tabs button.active span { background: var(--lime); }
 .workflow-error { margin: -6px 0 16px; border: 1px solid #e6a292; border-radius: 7px; padding: 10px 12px; background: #fff0eb; color: #9c321d; font-size: 11px; }
+.saved-searches-panel { margin: 0 0 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.saved-searches-panel summary { min-height: 48px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; font-size: 12px; font-weight: 850; }
+.saved-searches-panel summary::-webkit-details-marker { display: none; }
+.saved-searches-panel summary small { color: var(--muted); font-size: 10px; font-weight: 650; }
+.saved-searches-body { padding: 16px; border-top: 1px solid var(--line); background: #f7f6f0; }
+.save-search-form { display: grid; grid-template-columns: minmax(220px, 1fr) 190px auto; gap: 10px; align-items: end; }
+.save-search-form label { display: grid; gap: 6px; color: #4e5753; font-size: 9px; font-weight: 800; }
+.save-search-form input, .save-search-form select, .saved-search-list select { width: 100%; height: 40px; border: 1px solid var(--line); border-radius: 5px; padding: 0 11px; background: white; color: var(--ink); font: inherit; font-size: 11px; }
+.save-search-form button, .saved-search-list button { min-height: 40px; border: 0; border-radius: 5px; padding: 0 13px; background: var(--ink); color: white; font: inherit; font-size: 10px; font-weight: 800; cursor: pointer; }
+.save-search-form button:disabled, .saved-search-list button:disabled { opacity: .55; cursor: wait; }
+.notification-note { margin: 11px 0 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.saved-search-message { margin: 10px 0 0; color: #4f6b0b; font-size: 10px; font-weight: 750; }
+.saved-search-list { margin-top: 14px; display: grid; gap: 7px; }
+.saved-search-list article { display: grid; grid-template-columns: minmax(150px, 1fr) 180px auto 40px; gap: 8px; align-items: center; padding: 9px; border: 1px solid var(--line); border-radius: 7px; background: white; }
+.saved-search-list article > div { display: grid; gap: 3px; min-width: 0; }
+.saved-search-list strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.saved-search-list small { color: var(--muted); font-size: 9px; }
+.saved-search-list .delete-search { padding: 0; background: #f0eee7; color: #8f3b2a; font-size: 18px; }
 .filters { display: grid; grid-template-columns: minmax(280px, 1fr) 210px 190px; gap: 10px; margin-bottom: 34px; }
 .filters input, .filters select, .sort-control select { height: 44px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 3px; }
 .filters select { width: 100%; padding: 0 34px 0 13px; }
@@ -262,6 +280,8 @@ footer p { margin: 0; max-width: 520px; text-align: right; }
   .live-filters { grid-template-columns: 1fr 1fr; }
   .advanced-filter-grid { grid-template-columns: 1fr 1fr; }
   .search-field { grid-column: 1 / -1; }
+  .save-search-form { grid-template-columns: 1fr 1fr; }
+  .save-search-form button { grid-column: 1 / -1; }
 }
 
 @media (max-width: 760px) {
@@ -275,6 +295,9 @@ footer p { margin: 0; max-width: 520px; text-align: right; }
   .filters { grid-template-columns: 1fr; }
   .live-filters { grid-template-columns: 1fr; }
   .advanced-filter-grid { grid-template-columns: 1fr; }
+  .save-search-form, .saved-search-list article { grid-template-columns: 1fr; }
+  .save-search-form button { grid-column: auto; }
+  .saved-search-list .delete-search { min-height: 36px; }
   .advanced-filters summary { align-items: flex-start; flex-wrap: wrap; padding-top: 13px; padding-bottom: 13px; }
   .advanced-filters summary small { width: calc(100% - 34px); margin: -5px 0 0 34px; }
   .filter-actions { align-items: flex-start; }

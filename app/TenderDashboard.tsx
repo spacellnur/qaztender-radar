@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { TenderRecord, TenderSourceStatus, TenderStage, TenderWorkflowEntry } from "./tender-types";
+import type { AlertFrequency, SavedSearch, TenderRecord, TenderSearchFilters, TenderSourceStatus, TenderStage, TenderWorkflowEntry } from "./tender-types";
 
 type Props = {
   username: string;
@@ -9,6 +9,7 @@ type Props = {
   tenders: TenderRecord[];
   sourceStatus: TenderSourceStatus;
   initialWorkflow: TenderWorkflowEntry[];
+  initialSavedSearches: SavedSearch[];
 };
 
 type WorkspaceView = "all" | "favorites" | Exclude<TenderStage, "none" | "skipped">;
@@ -32,6 +33,12 @@ const workspaceViews: Array<{ value: WorkspaceView; label: string }> = [
   { value: "won", label: "Выиграли" },
   { value: "lost", label: "Проиграли" },
 ];
+
+const alertLabels: Record<AlertFrequency, string> = {
+  off: "Без уведомлений",
+  instant: "Сразу о новых",
+  daily: "Ежедневная сводка",
+};
 
 const money = new Intl.NumberFormat("ru-RU", {
   style: "currency",
@@ -109,7 +116,7 @@ function sourceCopy(status: TenderSourceStatus) {
   };
 }
 
-export default function TenderDashboard({ username, role, tenders, sourceStatus, initialWorkflow }: Props) {
+export default function TenderDashboard({ username, role, tenders, sourceStatus, initialWorkflow, initialSavedSearches }: Props) {
   const [referenceTime] = useState(() => Date.now());
   const [query, setQuery] = useState("");
   const [region, setRegion] = useState("all");
@@ -136,6 +143,11 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus,
   const [workflow, setWorkflow] = useState<Record<string, TenderWorkflowEntry>>(() => Object.fromEntries(initialWorkflow.map((entry) => [entry.tenderId, entry])));
   const [savingTenderId, setSavingTenderId] = useState("");
   const [workflowError, setWorkflowError] = useState("");
+  const [savedSearches, setSavedSearches] = useState(initialSavedSearches);
+  const [savedSearchName, setSavedSearchName] = useState("");
+  const [newAlertFrequency, setNewAlertFrequency] = useState<AlertFrequency>("off");
+  const [savingSearch, setSavingSearch] = useState(false);
+  const [savedSearchMessage, setSavedSearchMessage] = useState("");
 
   const subjectOptions = useMemo(
     () => Array.from(new Set(tenders.map((tender) => tender.subjectType).filter((value) => value && value !== "Не указан"))).sort(),
@@ -206,6 +218,53 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus,
   const activeTender = visibleTenders.find((tender) => tender.externalId === activeId) ?? visibleTenders[0] ?? null;
   const totalBudget = visibleTenders.reduce((sum, tender) => sum + tender.budget, 0);
   const copy = sourceCopy(sourceStatus);
+
+  function currentFilters(): TenderSearchFilters {
+    return { query, region, subject, budget, deadline, constructionOnly, announcementNumber, customer, method, status, amountFrom, amountTo, publishedFrom, publishedTo, endingFrom, endingTo, financialYear, sort };
+  }
+
+  function applySavedSearch(search: SavedSearch) {
+    const filters = search.filters;
+    setQuery(filters.query); setRegion(filters.region); setSubject(filters.subject); setBudget(filters.budget); setDeadline(filters.deadline);
+    setConstructionOnly(filters.constructionOnly); setAnnouncementNumber(filters.announcementNumber); setCustomer(filters.customer);
+    setMethod(filters.method); setStatus(filters.status); setAmountFrom(filters.amountFrom); setAmountTo(filters.amountTo);
+    setPublishedFrom(filters.publishedFrom); setPublishedTo(filters.publishedTo); setEndingFrom(filters.endingFrom); setEndingTo(filters.endingTo);
+    setFinancialYear(filters.financialYear); setSort(filters.sort); setWorkspaceView("all"); setSavedSearchMessage(`Поиск «${search.name}» применён`);
+  }
+
+  async function persistSavedSearch(search: Pick<SavedSearch, "id" | "name" | "filters" | "alertFrequency">) {
+    setSavingSearch(true); setSavedSearchMessage("");
+    try {
+      const response = await fetch("/api/saved-searches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(search) });
+      const result = await response.json() as { search?: SavedSearch; error?: string };
+      if (!response.ok || !result.search) throw new Error(result.error || "Не удалось сохранить поиск");
+      setSavedSearches((current) => [result.search!, ...current.filter((item) => item.id !== result.search!.id)]);
+      setSavedSearchMessage(`Поиск «${result.search.name}» сохранён`);
+      return true;
+    } catch (error) {
+      setSavedSearchMessage(error instanceof Error ? error.message : "Не удалось сохранить поиск");
+      return false;
+    } finally { setSavingSearch(false); }
+  }
+
+  async function createSavedSearch() {
+    const name = savedSearchName.trim();
+    if (!name) { setSavedSearchMessage("Введите название поиска"); return; }
+    const saved = await persistSavedSearch({ id: "", name, filters: currentFilters(), alertFrequency: newAlertFrequency });
+    if (saved) { setSavedSearchName(""); setNewAlertFrequency("off"); }
+  }
+
+  async function removeSavedSearch(id: string) {
+    setSavingSearch(true); setSavedSearchMessage("");
+    try {
+      const response = await fetch(`/api/saved-searches?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Не удалось удалить поиск");
+      setSavedSearches((current) => current.filter((item) => item.id !== id));
+      setSavedSearchMessage("Сохранённый поиск удалён");
+    } catch (error) { setSavedSearchMessage(error instanceof Error ? error.message : "Не удалось удалить поиск"); }
+    finally { setSavingSearch(false); }
+  }
 
   function workspaceCount(view: WorkspaceView) {
     if (view === "all") return tenders.length;
@@ -331,6 +390,24 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus,
             {workspaceViews.map((view) => <button type="button" className={workspaceView === view.value ? "active" : ""} onClick={() => setWorkspaceView(view.value)} key={view.value}>{view.label}<span>{workspaceCount(view.value)}</span></button>)}
           </nav>
           {workflowError && <p className="workflow-error" role="alert">{workflowError}</p>}
+          <details className="saved-searches-panel">
+            <summary><span>Мои поиски</span><small>{savedSearches.length ? `${savedSearches.length} сохранено` : "Сохраните нужные фильтры"}</small></summary>
+            <div className="saved-searches-body">
+              <div className="save-search-form">
+                <label><span>Название подборки</span><input value={savedSearchName} maxLength={60} onChange={(event) => setSavedSearchName(event.target.value)} placeholder="Например, Стройка в Туркестане" /></label>
+                <label><span>Проверять новые тендеры</span><select value={newAlertFrequency} onChange={(event) => setNewAlertFrequency(event.target.value as AlertFrequency)}>{Object.entries(alertLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+                <button type="button" disabled={savingSearch} onClick={createSavedSearch}>Сохранить текущие фильтры</button>
+              </div>
+              <p className="notification-note">Частота уже сохранится. Доставка уведомлений заработает после подключения официального источника и канала Telegram или email.</p>
+              {savedSearchMessage && <p className="saved-search-message" role="status">{savedSearchMessage}</p>}
+              {savedSearches.length > 0 && <div className="saved-search-list">{savedSearches.map((search) => <article key={search.id}>
+                <div><strong>{search.name}</strong><small>{alertLabels[search.alertFrequency]}</small></div>
+                <label><span className="sr-only">Частота уведомлений для {search.name}</span><select value={search.alertFrequency} disabled={savingSearch} onChange={(event) => persistSavedSearch({ ...search, alertFrequency: event.target.value as AlertFrequency })}>{Object.entries(alertLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+                <button type="button" disabled={savingSearch} onClick={() => applySavedSearch(search)}>Применить</button>
+                <button className="delete-search" type="button" disabled={savingSearch} onClick={() => removeSavedSearch(search.id)} aria-label={`Удалить поиск ${search.name}`}>×</button>
+              </article>)}</div>}
+            </div>
+          </details>
           <div className="filters live-filters">
             <label className="search-field">
               <span aria-hidden="true">⌕</span>
