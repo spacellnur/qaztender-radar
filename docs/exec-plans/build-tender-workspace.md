@@ -13,7 +13,7 @@ QazTender Radar must progress from a searchable announcement feed into a daily w
 - [x] (2026-08-10 15:19Z) Validated Milestone 1 with an inspected additive migration, successful production build, 6 passing application tests, clean lint, and successful private Sites deployment. A real-tender click-through remains unavailable only because the official feed still awaits its API token.
 - [x] (2026-08-10 15:31Z) Milestone 2: deployed named saved searches, restore/delete controls, and `off`/`instant`/`daily` notification preferences. Actual Telegram/email delivery remains intentionally deferred until a real feed and delivery channel are connected.
 - [x] (2026-08-10 15:29Z) Validated Milestone 2 locally with an inspected additive migration, successful production build, 8 passing application tests, and clean lint.
-- [ ] Milestone 3: make company profiles editable and add explainable tender-to-company matching based only on available evidence. Completed locally: specialist-owned edit route, parsed profile model, and deterministic region/budget/activity/license explanations. Remaining: private deployment.
+- [x] (2026-08-10 15:39Z) Milestone 3: deployed specialist-owned profile editing and deterministic region, budget, activity, and license explanations based only on available evidence.
 - [x] (2026-08-10 15:37Z) Validated Milestone 3 locally with a successful production build, 10 passing application and matching tests, and clean lint. No schema migration was needed because the existing company profile table already stores all edited fields.
 - [ ] Milestone 4: ingest lots, ENS TRU, delivery location, documents, and change history after official API access is available.
 - [ ] Milestone 5: add reusable checklists, team assignments, buyer/winner analytics, and grounded document analysis.
@@ -64,7 +64,7 @@ Milestone 1 is complete and deployed. The dashboard now has account-specific tab
 
 Milestone 2 is complete and deployed. The dashboard now exposes `Мои поиски`, captures the entire current filter state, restores it in one action, stores an honest future alert frequency, and lets the owner delete the preset. The new API derives ownership from the signed session, and the additive migration creates only `saved_searches` plus its owner/name and owner/update indexes. The production build, eight application tests, lint, archive validation, database migration, and private deployment all succeeded. Telegram/email transport remains a later connection task rather than a hidden or simulated feature.
 
-Milestone 3 is complete locally. Tender specialists can reopen their existing onboarding form from `Профиль компании`, edit every saved field, and return to the radar. Tender cards and the selected-tender panel use a pure evidence function to label known alignment, explicit conflicts, and missing information. Tests prove both a supported construction match and a budget conflict, and confirm that license applicability remains unknown instead of being inferred. Build, ten tests, and lint pass; private deployment remains.
+Milestone 3 is complete and deployed. Tender specialists can reopen their existing onboarding form from `Профиль компании`, edit every saved field, and return to the radar. Tender cards and the selected-tender panel use a pure evidence function to label known alignment, explicit conflicts, and missing information. Tests prove both a supported construction match and a budget conflict, and confirm that license applicability remains unknown instead of being inferred. Build, ten tests, lint, archive validation, and private deployment all succeeded.
 
 ## Context and Orientation
 
@@ -166,3 +166,5 @@ Revision note (2026-08-10 15:31Z): Closed Milestone 2 after successful private d
 Revision note (2026-08-10 15:36Z): Started Milestone 3. Defined editable specialist-owned profiles and evidence-based region, budget, activity, and license explanations without win probabilities.
 
 Revision note (2026-08-10 15:37Z): Recorded the completed local Milestone 3 implementation, the reuse of the existing profile schema, and successful build, ten-test, and lint evidence. Deployment is the remaining checkpoint.
+
+Revision note (2026-08-10 15:39Z): Closed Milestone 3 after successful private deployment. The remaining roadmap now consists of official lot/document ingestion and later team/analytics/document-assistance work.
