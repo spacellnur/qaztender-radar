@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
+import type { CompanyProfile } from "../../tender-types";
 
 const regions = [
   "Астана", "Алматы", "Шымкент", "Абайская область", "Акмолинская область",
@@ -31,11 +33,11 @@ function ChoiceButton({ active, children, onClick }: { active: boolean; children
   return <button type="button" className={`choice-chip ${active ? "selected" : ""}`} aria-pressed={active} onClick={onClick}>{children}</button>;
 }
 
-export default function CompanyForm({ username }: { username: string }) {
-  const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
-  const [selectedActivities, setSelectedActivities] = useState<string[]>([]);
-  const [selectedConstruction, setSelectedConstruction] = useState<string[]>([]);
-  const [unlimitedBudget, setUnlimitedBudget] = useState(false);
+export default function CompanyForm({ username, initialProfile, editing = false }: { username: string; initialProfile?: CompanyProfile; editing?: boolean }) {
+  const [selectedRegions, setSelectedRegions] = useState<string[]>(initialProfile?.regions ?? []);
+  const [selectedActivities, setSelectedActivities] = useState<string[]>(() => activities.filter((activity) => initialProfile?.directions.includes(activity.label)).map((activity) => activity.id));
+  const [selectedConstruction, setSelectedConstruction] = useState<string[]>(initialProfile?.constructionTypes ?? []);
+  const [unlimitedBudget, setUnlimitedBudget] = useState(initialProfile?.maxBudget === -1);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -90,15 +92,15 @@ export default function CompanyForm({ username }: { username: string }) {
     <main className="onboarding-shell">
       <section className="onboarding-card">
         <div className="onboarding-top"><span>QT</span><div><small>АККАУНТ ТЕНДЕРЩИКА</small><strong>{username}</strong></div></div>
-        <p className="eyebrow">ПЕРСОНАЛИЗАЦИЯ РАДАРА</p>
-        <h1>Расскажите о компании</h1>
-        <p className="onboarding-intro">Выберите только то, что известно сейчас. Необязательные сведения можно добавить позже.</p>
+        <p className="eyebrow">{editing ? "НАСТРОЙКА ПОДБОРА" : "ПЕРСОНАЛИЗАЦИЯ РАДАРА"}</p>
+        <h1>{editing ? "Профиль компании" : "Расскажите о компании"}</h1>
+        <p className="onboarding-intro">{editing ? "Изменения сразу повлияют на объяснения соответствия тендеров." : "Выберите только то, что известно сейчас. Необязательные сведения можно добавить позже."}</p>
         <p className="required-note"><span>*</span> Обязательны только название, регион и направление деятельности</p>
 
         <form className="company-form" onSubmit={submit}>
-          <label className="wide">Название компании <span className="required-mark">*</span><input name="companyName" required /></label>
-          <label>БИН <small>необязательно</small><input name="bin" inputMode="numeric" pattern="\d{12}" maxLength={12} placeholder="12 цифр" /></label>
-          <label>Опыт работы, лет <small>необязательно</small><input name="experienceYears" type="number" min="0" max="100" placeholder="Например, 8" /></label>
+          <label className="wide">Название компании <span className="required-mark">*</span><input name="companyName" required defaultValue={initialProfile?.companyName ?? ""} /></label>
+          <label>БИН <small>необязательно</small><input name="bin" inputMode="numeric" pattern="\d{12}" maxLength={12} placeholder="12 цифр" defaultValue={initialProfile?.bin ?? ""} /></label>
+          <label>Опыт работы, лет <small>необязательно</small><input name="experienceYears" type="number" min="0" max="100" placeholder="Например, 8" defaultValue={initialProfile?.experienceYears || ""} /></label>
 
           <fieldset className="wide choice-fieldset">
             <legend>Регионы работы <span className="required-mark">*</span></legend>
@@ -127,18 +129,19 @@ export default function CompanyForm({ username }: { username: string }) {
             </div>
           </fieldset>}
 
-          <label className="wide">Лицензии и категории <small>необязательно — можно заполнить позже</small><textarea name="licenses" placeholder="Например: СМР II категории" /></label>
-          <label>Количество сотрудников <small>необязательно</small><input name="employeeCount" type="number" min="1" placeholder="Например, 35" /></label>
+          <label className="wide">Лицензии и категории <small>необязательно — можно заполнить позже</small><textarea name="licenses" placeholder="Например: СМР II категории" defaultValue={initialProfile?.licenses ?? ""} /></label>
+          <label>Количество сотрудников <small>необязательно</small><input name="employeeCount" type="number" min="1" placeholder="Например, 35" defaultValue={initialProfile?.employeeCount || ""} /></label>
 
           <fieldset className="budget-field wide">
             <legend>Финансовый масштаб тендера</legend>
             <p>Укажите максимальную сумму тендера, с которой компания готова работать.</p>
             <label className="unlimited-choice"><input type="checkbox" checked={unlimitedBudget} onChange={(event) => setUnlimitedBudget(event.target.checked)} /> Без ограничений по бюджету</label>
-            {!unlimitedBudget && <label>Максимальная сумма тендера, ₸ <small>необязательно</small><input name="maxBudget" type="number" min="1" step="1000000" placeholder="Например, 300 000 000" /></label>}
+            {!unlimitedBudget && <label>Максимальная сумма тендера, ₸ <small>необязательно</small><input name="maxBudget" type="number" min="1" step="1000000" placeholder="Например, 300 000 000" defaultValue={initialProfile && initialProfile.maxBudget > 0 ? initialProfile.maxBudget : ""} /></label>}
           </fieldset>
 
           {error && <p className="login-error wide" role="alert">{error}</p>}
-          <button className="wide" disabled={pending}>{pending ? "Сохраняем…" : "Сохранить и открыть радар"}</button>
+          <button className="wide" disabled={pending}>{pending ? "Сохраняем…" : editing ? "Сохранить изменения" : "Сохранить и открыть радар"}</button>
+          {editing && <Link className="profile-back-link wide" href="/">Вернуться без изменений</Link>}
         </form>
       </section>
     </main>

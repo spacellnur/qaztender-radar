@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { AlertFrequency, SavedSearch, TenderRecord, TenderSearchFilters, TenderSourceStatus, TenderStage, TenderWorkflowEntry } from "./tender-types";
+import type { AlertFrequency, CompanyProfile, SavedSearch, TenderRecord, TenderSearchFilters, TenderSourceStatus, TenderStage, TenderWorkflowEntry } from "./tender-types";
+import { explainTenderMatch } from "./tender-matching";
 
 type Props = {
   username: string;
@@ -10,6 +11,7 @@ type Props = {
   sourceStatus: TenderSourceStatus;
   initialWorkflow: TenderWorkflowEntry[];
   initialSavedSearches: SavedSearch[];
+  companyProfile: CompanyProfile | null;
 };
 
 type WorkspaceView = "all" | "favorites" | Exclude<TenderStage, "none" | "skipped">;
@@ -116,7 +118,7 @@ function sourceCopy(status: TenderSourceStatus) {
   };
 }
 
-export default function TenderDashboard({ username, role, tenders, sourceStatus, initialWorkflow, initialSavedSearches }: Props) {
+export default function TenderDashboard({ username, role, tenders, sourceStatus, initialWorkflow, initialSavedSearches, companyProfile }: Props) {
   const [referenceTime] = useState(() => Date.now());
   const [query, setQuery] = useState("");
   const [region, setRegion] = useState("all");
@@ -216,6 +218,7 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus,
   }, [tenders, query, region, subject, budget, deadline, constructionOnly, announcementNumber, customer, method, status, amountFrom, amountTo, publishedFrom, publishedTo, endingFrom, endingTo, financialYear, sort, referenceTime, workspaceView, workflow]);
 
   const activeTender = visibleTenders.find((tender) => tender.externalId === activeId) ?? visibleTenders[0] ?? null;
+  const activeMatch = activeTender && companyProfile ? explainTenderMatch(activeTender, companyProfile) : null;
   const totalBudget = visibleTenders.reduce((sum, tender) => sum + tender.budget, 0);
   const copy = sourceCopy(sourceStatus);
 
@@ -351,6 +354,7 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus,
           <span className={`demo-pill source-pill ${sourceStatus.state}`}><span aria-hidden="true" />{copy.label}</span>
           <div className="account-block">
             {role === "super_admin" && <a className="team-link" href="/admin/users">Команда</a>}
+            {role === "tender_specialist" && <a className="team-link" href="/profile/company">Профиль компании</a>}
             <div className="profile-button" title={username}>
               <span>{role === "super_admin" ? "ГА" : "Т"}</span>
               <span className="profile-copy"><strong>{role === "super_admin" ? "Главный администратор" : "Тендерщик"}</strong><small>{username}</small></span>
@@ -458,6 +462,7 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus,
               </div>
             ) : visibleTenders.map((tender, index) => {
               const days = remainingDays(tender.endDate, referenceTime);
+              const match = companyProfile ? explainTenderMatch(tender, companyProfile) : null;
               return (
                 <article className={`tender-card live-card ${activeTender?.externalId === tender.externalId ? "active" : ""}`} key={tender.externalId}>
                   <div className="rank">{String(index + 1).padStart(2, "0")}</div>
@@ -466,7 +471,7 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus,
                     <div className="card-meta"><span>№ {tender.numberAnno}</span><span>{tender.methodName}</span><button className={`favorite-button ${workflow[tender.externalId]?.isFavorite ? "active" : ""}`} type="button" disabled={savingTenderId === tender.externalId} onClick={() => updateWorkflow(tender.externalId, { isFavorite: !workflow[tender.externalId]?.isFavorite })} aria-label={workflow[tender.externalId]?.isFavorite ? "Убрать из избранного" : "Добавить в избранное"}>★</button></div>
                     <h3>{tender.title}</h3>
                     <p className="buyer">{tender.buyer}</p>
-                    <div className="tags"><span>{tender.regionName}</span><span>{tender.subjectType}</span>{tender.isConstructionWork && <span>СМР</span>}{workflow[tender.externalId]?.stage && workflow[tender.externalId].stage !== "none" && <span className="stage-chip">{stageLabels[workflow[tender.externalId].stage]}</span>}</div>
+                    <div className="tags"><span>{tender.regionName}</span><span>{tender.subjectType}</span>{tender.isConstructionWork && <span>СМР</span>}{workflow[tender.externalId]?.stage && workflow[tender.externalId].stage !== "none" && <span className="stage-chip">{stageLabels[workflow[tender.externalId].stage]}</span>}{match && <span className={`match-chip ${match.status}`}>{match.label}</span>}</div>
                     <div className="reason-row factual-row"><span><b>✓</b>{tender.statusName}</span><span><b>↗</b>Обновлено в источнике</span></div>
                   </div>
                   <div className="tender-finance">
@@ -489,6 +494,11 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus,
                 <label><span>Этап участия</span><select value={workflow[activeTender.externalId]?.stage ?? "none"} disabled={savingTenderId === activeTender.externalId} onChange={(event) => updateWorkflow(activeTender.externalId, { stage: event.target.value as TenderStage })}>{Object.entries(stageLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
                 <button className={workflow[activeTender.externalId]?.isFavorite ? "active" : ""} type="button" disabled={savingTenderId === activeTender.externalId} onClick={() => updateWorkflow(activeTender.externalId, { isFavorite: !workflow[activeTender.externalId]?.isFavorite })}><span aria-hidden="true">★</span>{workflow[activeTender.externalId]?.isFavorite ? "В избранном" : "В избранное"}</button>
               </div>
+              {activeMatch && <section className={`match-explanation ${activeMatch.status}`}>
+                <div><span>СООТВЕТСТВИЕ ПРОФИЛЮ</span><strong>{activeMatch.label}</strong></div>
+                <ul>{activeMatch.evidence.map((item) => <li className={item.kind} key={item.label}><span aria-hidden="true">{item.kind === "positive" ? "✓" : item.kind === "negative" ? "×" : "?"}</span>{item.label}</li>)}</ul>
+                <p>Оценка основана только на известных полях объявления. Проверьте лоты, лицензии и документы на официальном портале.</p>
+              </section>}
               <dl className="tender-facts">
                 <div><dt>Заказчик</dt><dd>{activeTender.buyer}</dd></div>
                 <div><dt>Регион</dt><dd>{activeTender.regionName}</dd></div>

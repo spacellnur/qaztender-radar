@@ -13,7 +13,8 @@ QazTender Radar must progress from a searchable announcement feed into a daily w
 - [x] (2026-08-10 15:19Z) Validated Milestone 1 with an inspected additive migration, successful production build, 6 passing application tests, clean lint, and successful private Sites deployment. A real-tender click-through remains unavailable only because the official feed still awaits its API token.
 - [x] (2026-08-10 15:31Z) Milestone 2: deployed named saved searches, restore/delete controls, and `off`/`instant`/`daily` notification preferences. Actual Telegram/email delivery remains intentionally deferred until a real feed and delivery channel are connected.
 - [x] (2026-08-10 15:29Z) Validated Milestone 2 locally with an inspected additive migration, successful production build, 8 passing application tests, and clean lint.
-- [ ] Milestone 3: make company profiles editable and add explainable tender-to-company matching based only on available evidence.
+- [ ] Milestone 3: make company profiles editable and add explainable tender-to-company matching based only on available evidence. Completed locally: specialist-owned edit route, parsed profile model, and deterministic region/budget/activity/license explanations. Remaining: private deployment.
+- [x] (2026-08-10 15:37Z) Validated Milestone 3 locally with a successful production build, 10 passing application and matching tests, and clean lint. No schema migration was needed because the existing company profile table already stores all edited fields.
 - [ ] Milestone 4: ingest lots, ENS TRU, delivery location, documents, and change history after official API access is available.
 - [ ] Milestone 5: add reusable checklists, team assignments, buyer/winner analytics, and grounded document analysis.
 
@@ -53,11 +54,17 @@ QazTender Radar must progress from a searchable announcement feed into a daily w
   Rationale: Saved searches and `instant` or `daily` preferences are useful durable inputs before the Goszakup feed exists. Email and Telegram destinations should be added only with the actual delivery worker, so the interface remains truthful and stores no unnecessary contact data.
   Date/Author: 2026-08-10 / Codex
 
+- Decision: Use evidence labels rather than a numerical win probability or opaque score.
+  Rationale: The current announcement feed can compare a company profile with region, budget, procurement subject, and construction classification, but it does not yet contain full lot requirements or documents. The product may say which known conditions align or conflict and must mark licenses as requiring document review; it must not imply a chance of winning.
+  Date/Author: 2026-08-10 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete and deployed. The dashboard now has account-specific tabs, favorite actions, stage badges, and a detail-panel stage selector backed by an additive D1 table and protected API. The production build, six application tests, lint, archive validation, database migration, and private production deployment all succeeded. A user can exercise the full persistence round-trip as soon as the official feed contains its first tender; no further code change is required for that scenario.
 
 Milestone 2 is complete and deployed. The dashboard now exposes `Мои поиски`, captures the entire current filter state, restores it in one action, stores an honest future alert frequency, and lets the owner delete the preset. The new API derives ownership from the signed session, and the additive migration creates only `saved_searches` plus its owner/name and owner/update indexes. The production build, eight application tests, lint, archive validation, database migration, and private deployment all succeeded. Telegram/email transport remains a later connection task rather than a hidden or simulated feature.
+
+Milestone 3 is complete locally. Tender specialists can reopen their existing onboarding form from `Профиль компании`, edit every saved field, and return to the radar. Tender cards and the selected-tender panel use a pure evidence function to label known alignment, explicit conflicts, and missing information. Tests prove both a supported construction match and a budget conflict, and confirm that license applicability remains unknown instead of being inferred. Build, ten tests, and lint pass; private deployment remains.
 
 ## Context and Orientation
 
@@ -78,6 +85,10 @@ Update `app/globals.css` so the tabs are horizontally scrollable on small screen
 For Milestone 2, add a `saved_searches` D1 table keyed by a server-derived owner key. Each row stores a short user-visible name, a JSON snapshot of every dashboard filter, an alert frequency of `off`, `instant`, or `daily`, and timestamps. The snapshot includes search text, region, procurement type, budget and deadline presets, construction-only mode, announcement number, customer, method, status, amount range, publication and ending date ranges, financial year, and sort order. Add protected GET, POST, and DELETE behavior in `app/api/saved-searches/route.ts`; ownership always comes from the signed session.
 
 Load saved searches in `app/page.tsx` and add a compact `Мои поиски` panel to `app/TenderDashboard.tsx`. A user can name and save the current filter state, restore it in one click, choose whether future matches should be checked immediately or summarized daily, and delete the preset. The panel must explicitly say that delivery will become active after the official source and notification channel are connected. Extend tests for visibility, anonymous rejection, and invalid frequency validation, then generate the migration, build, test, lint, and deploy.
+
+For Milestone 3, add a parsed `CompanyProfile` model in `app/tender-types.ts` and a `getCompanyProfile` query in `app/db.ts`. Reuse the existing company form for both onboarding and editing by accepting initial values and an editing mode. Add `app/profile/company/page.tsx`, protected so only a tender specialist can edit that specialist's own profile, and link it from the dashboard account area.
+
+Pass the current specialist profile into `app/TenderDashboard.tsx`. For each tender, compare only facts already available: whether the profile includes the tender region, whether the tender budget is within the declared maximum or the maximum is unlimited, and whether the procurement subject or construction classification aligns with a selected business direction. Explicit region or budget conflicts produce `Вне профиля`; two or more supported facts with no conflict produce `Подходит по известным данным`; incomplete evidence produces `Нужно проверить`. The detail panel lists each supporting fact, conflict, and unknown. Licenses are never assumed to satisfy a tender because the source documents are not yet ingested.
 
 Later milestones are intentionally ordered by dependency. Saved searches need the existing filter model; alerts need saved searches plus live synchronization; explainable matching needs editable company profiles and lot requirements; checklists and AI document analysis need official documents; historical analytics need enough awards and contracts to avoid misleading conclusions.
 
@@ -106,6 +117,8 @@ Selecting `Избранные` shows only favorite tenders while retaining searc
 Automated acceptance requires a clean migration, a successful production build, all tests passing, and a clean lint run. Deployment acceptance requires Sites to return `succeeded` with the existing QazTender Radar production URL.
 
 Milestone 2 acceptance is observable without live tenders: an authenticated user can set filters, save them under a name, change the alert frequency, reload, restore the filters, and delete the preset. Another account cannot read, edit, or delete that row because every query includes its server-derived owner key. Anonymous requests return 403, malformed names or alert frequencies return 400, and the UI never says that Telegram or email delivery is active.
+
+Milestone 3 acceptance is observable by signing in as a tender specialist, opening `Профиль компании`, changing a region or maximum budget, saving, and returning to the radar. Tender cards and the detail panel then explain changed matches using only the saved profile and official announcement fields. The super administrator cannot edit a specialist's company profile, anonymous visitors cannot use the profile API, and no label claims that a license is valid for a tender without document evidence.
 
 ## Idempotence and Recovery
 
@@ -149,3 +162,7 @@ Revision note (2026-08-10 15:24Z): Started Milestone 2. Defined the saved-filter
 Revision note (2026-08-10 15:29Z): Recorded the completed local Milestone 2 implementation, inspected migration, and successful build, eight-test, and lint evidence. Deployment is the remaining checkpoint.
 
 Revision note (2026-08-10 15:31Z): Closed Milestone 2 after successful private deployment and clarified that only real message delivery remains dependent on the official feed and channel integration.
+
+Revision note (2026-08-10 15:36Z): Started Milestone 3. Defined editable specialist-owned profiles and evidence-based region, budget, activity, and license explanations without win probabilities.
+
+Revision note (2026-08-10 15:37Z): Recorded the completed local Milestone 3 implementation, the reuse of the existing profile schema, and successful build, ten-test, and lint evidence. Deployment is the remaining checkpoint.

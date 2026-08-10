@@ -74,3 +74,17 @@ export type SavedSearch = {
   createdAt: number;
   updatedAt: number;
 };
+
+export type CompanyProfile = {
+  companyName: string;
+  bin: string;
+  regions: string[];
+  directions: string[];
+  constructionTypes: string[];
+  licenses: string;
+  experienceYears: number;
+  employeeCount: number;
+  minBudget: number;
+  maxBudget: number;
+  updatedAt: number;
+};

@@ -1,5 +1,5 @@
 import type { AppRole } from "./auth";
-import type { AlertFrequency, SavedSearch, TenderRecord, TenderSearchFilters, TenderSourceStatus, TenderStage, TenderWorkflowEntry } from "./tender-types";
+import type { AlertFrequency, CompanyProfile, SavedSearch, TenderRecord, TenderSearchFilters, TenderSourceStatus, TenderStage, TenderWorkflowEntry } from "./tender-types";
 
 export type DatabaseUser = { id: string; username: string; passwordHash: string; role: AppRole; isActive: number };
 
@@ -28,6 +28,29 @@ export async function createTenderSpecialist(username: string, passwordHash: str
 
 export async function companyProfileExists(userId: string): Promise<boolean> {
   return Boolean(await db()?.prepare("SELECT 1 AS present FROM company_profiles WHERE user_id = ? LIMIT 1").bind(userId).first());
+}
+
+export async function getCompanyProfile(userId: string): Promise<CompanyProfile | null> {
+  const row = await db()?.prepare(`SELECT company_name AS companyName, bin, regions, work_categories AS workCategories, licenses,
+    experience_years AS experienceYears, employee_count AS employeeCount, min_budget AS minBudget, max_budget AS maxBudget, updated_at AS updatedAt
+    FROM company_profiles WHERE user_id = ? LIMIT 1`).bind(userId).first<{
+      companyName: string; bin: string; regions: string; workCategories: string; licenses: string;
+      experienceYears: number; employeeCount: number; minBudget: number; maxBudget: number; updatedAt: number;
+    }>();
+  if (!row) return null;
+  try {
+    const regions = JSON.parse(row.regions) as unknown;
+    const categories = JSON.parse(row.workCategories) as { directions?: unknown; construction?: unknown };
+    return {
+      companyName: row.companyName,
+      bin: row.bin,
+      regions: Array.isArray(regions) ? regions.filter((item): item is string => typeof item === "string") : [],
+      directions: Array.isArray(categories.directions) ? categories.directions.filter((item): item is string => typeof item === "string") : [],
+      constructionTypes: Array.isArray(categories.construction) ? categories.construction.filter((item): item is string => typeof item === "string") : [],
+      licenses: row.licenses,
+      experienceYears: Number(row.experienceYears), employeeCount: Number(row.employeeCount), minBudget: Number(row.minBudget), maxBudget: Number(row.maxBudget), updatedAt: Number(row.updatedAt),
+    };
+  } catch { return null; }
 }
 
 export async function saveCompanyProfile(userId: string, profile: Record<string, string | number>) {

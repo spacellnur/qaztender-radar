@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { explainTenderMatch } from "../app/tender-matching.ts";
 
 const username = "test-admin";
 const password = "correct-test-password";
@@ -148,4 +149,37 @@ test("saved searches reject malformed alert settings before database access", as
     body: JSON.stringify({ name: "Туркестан", alertFrequency: "sometimes", filters: {} }),
   });
   assert.equal(response.status, 400);
+});
+
+test("company profile editing is restricted to tender specialists", async () => {
+  const state = await loadWorker();
+  const cookie = await adminCookie(state);
+  const page = await request(state, "/profile/company", { headers: { accept: "text/html", cookie }, redirect: "manual" });
+  assert.match(String(page.status), /^30[2378]$/);
+  assert.equal(new URL(page.headers.get("location"), "http://localhost").pathname, "/");
+  const anonymousWrite = await request(state, "/api/company-profile", { method: "POST" });
+  assert.equal(anonymousWrite.status, 403);
+});
+
+test("tender matching explains facts without inventing a win probability", () => {
+  const tender = {
+    externalId: "t-1", numberAnno: "1", title: "Капитальный ремонт школы", buyer: "Заказчик", customerBin: "",
+    regionCode: "61", regionName: "Туркестанская область", subjectTypeId: 0, subjectType: "Работа", methodId: 0,
+    methodName: "Конкурс", budget: 90_000_000, startDate: null, endDate: null, publishDate: null, isConstructionWork: true,
+    statusId: 0, statusName: "Опубликовано", kato: "[]", systemId: 3, sourceUrl: "https://example.test", upstreamUpdatedAt: "", fetchedAt: 0, updatedAt: 0,
+  };
+  const profile = {
+    companyName: "Компания", bin: "", regions: ["Туркестанская область"], directions: ["Строительство и ремонт"],
+    constructionTypes: ["Капитальный ремонт"], licenses: "СМР II категории", experienceYears: 0, employeeCount: 0,
+    minBudget: 0, maxBudget: 100_000_000, updatedAt: 0,
+  };
+  const match = explainTenderMatch(tender, profile);
+  assert.equal(match.status, "fits");
+  assert.equal(match.label, "Подходит по известным данным");
+  assert.ok(match.evidence.some((item) => item.kind === "unknown" && /применимость/.test(item.label)));
+  assert.doesNotMatch(JSON.stringify(match), /вероятност|шанс побед/i);
+
+  const outside = explainTenderMatch({ ...tender, budget: 150_000_000 }, profile);
+  assert.equal(outside.status, "outside");
+  assert.ok(outside.evidence.some((item) => item.kind === "negative" && /выше лимита/.test(item.label)));
 });
