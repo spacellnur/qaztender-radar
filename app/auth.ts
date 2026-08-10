@@ -7,6 +7,10 @@ export type AppSession = {
   expiresAt: number;
 };
 
+export function sessionOwnerKey(session: AppSession): string {
+  return session.userId ? `user:${session.userId}` : `admin:${session.username.trim().toLocaleLowerCase("ru")}`;
+}
+
 type RuntimeEnv = {
   DB?: D1Database;
   ADMIN_USERNAME?: string;

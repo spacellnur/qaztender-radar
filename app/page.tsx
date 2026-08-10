@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import TenderDashboard from "./TenderDashboard";
-import { readSessionToken, SESSION_COOKIE } from "./auth";
-import { companyProfileExists, getTenderSourceStatus, listTenders } from "./db";
+import { readSessionToken, SESSION_COOKIE, sessionOwnerKey } from "./auth";
+import { companyProfileExists, getTenderSourceStatus, listTenders, listTenderWorkflow } from "./db";
 import { isGoszakupConfigured } from "./goszakup";
 
 export const metadata: Metadata = {
@@ -18,6 +18,10 @@ export default async function Home() {
   if (session.role === "tender_specialist" && session.userId && !(await companyProfileExists(session.userId))) redirect("/onboarding/company");
 
   const configured = isGoszakupConfigured();
-  const [tenders, sourceStatus] = await Promise.all([listTenders(), getTenderSourceStatus(configured)]);
-  return <TenderDashboard username={session.username} role={session.role} tenders={tenders} sourceStatus={sourceStatus} />;
+  const [tenders, sourceStatus, initialWorkflow] = await Promise.all([
+    listTenders(),
+    getTenderSourceStatus(configured),
+    listTenderWorkflow(sessionOwnerKey(session)),
+  ]);
+  return <TenderDashboard username={session.username} role={session.role} tenders={tenders} sourceStatus={sourceStatus} initialWorkflow={initialWorkflow} />;
 }

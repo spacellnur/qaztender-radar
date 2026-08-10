@@ -1,14 +1,37 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { TenderRecord, TenderSourceStatus } from "./tender-types";
+import type { TenderRecord, TenderSourceStatus, TenderStage, TenderWorkflowEntry } from "./tender-types";
 
 type Props = {
   username: string;
   role: "super_admin" | "tender_specialist" | "guest";
   tenders: TenderRecord[];
   sourceStatus: TenderSourceStatus;
+  initialWorkflow: TenderWorkflowEntry[];
 };
+
+type WorkspaceView = "all" | "favorites" | Exclude<TenderStage, "none" | "skipped">;
+
+const stageLabels: Record<TenderStage, string> = {
+  none: "Не выбрано",
+  reviewing: "Изучаем",
+  participating: "Участвуем",
+  submitted: "Заявка подана",
+  won: "Выиграли",
+  lost: "Проиграли",
+  skipped: "Не подходит",
+};
+
+const workspaceViews: Array<{ value: WorkspaceView; label: string }> = [
+  { value: "all", label: "Все тендеры" },
+  { value: "favorites", label: "Избранные" },
+  { value: "reviewing", label: "Изучаем" },
+  { value: "participating", label: "Участвуем" },
+  { value: "submitted", label: "Заявка подана" },
+  { value: "won", label: "Выиграли" },
+  { value: "lost", label: "Проиграли" },
+];
 
 const money = new Intl.NumberFormat("ru-RU", {
   style: "currency",
@@ -86,7 +109,7 @@ function sourceCopy(status: TenderSourceStatus) {
   };
 }
 
-export default function TenderDashboard({ username, role, tenders, sourceStatus }: Props) {
+export default function TenderDashboard({ username, role, tenders, sourceStatus, initialWorkflow }: Props) {
   const [referenceTime] = useState(() => Date.now());
   const [query, setQuery] = useState("");
   const [region, setRegion] = useState("all");
@@ -109,6 +132,10 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus 
   const [activeId, setActiveId] = useState(tenders[0]?.externalId ?? "");
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("all");
+  const [workflow, setWorkflow] = useState<Record<string, TenderWorkflowEntry>>(() => Object.fromEntries(initialWorkflow.map((entry) => [entry.tenderId, entry])));
+  const [savingTenderId, setSavingTenderId] = useState("");
+  const [workflowError, setWorkflowError] = useState("");
 
   const subjectOptions = useMemo(
     () => Array.from(new Set(tenders.map((tender) => tender.subjectType).filter((value) => value && value !== "Не указан"))).sort(),
@@ -151,6 +178,7 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus 
     const endingStart = startOfKazakhstanDate(endingFrom);
     const endingEnd = endOfKazakhstanDate(endingTo);
     return tenders
+      .filter((tender) => workspaceView === "all" || (workspaceView === "favorites" ? workflow[tender.externalId]?.isFavorite : workflow[tender.externalId]?.stage === workspaceView))
       .filter((tender) => !normalized || `${tender.title} ${tender.buyer} ${tender.customerBin} ${tender.numberAnno}`.toLocaleLowerCase("ru").includes(normalized))
       .filter((tender) => region === "all" || tender.regionCode === region)
       .filter((tender) => subject === "all" || tender.subjectType === subject)
@@ -173,11 +201,50 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus 
         if (sort === "published") return (right.publishDate ?? 0) - (left.publishDate ?? 0);
         return (left.endDate ?? Number.MAX_SAFE_INTEGER) - (right.endDate ?? Number.MAX_SAFE_INTEGER);
       });
-  }, [tenders, query, region, subject, budget, deadline, constructionOnly, announcementNumber, customer, method, status, amountFrom, amountTo, publishedFrom, publishedTo, endingFrom, endingTo, financialYear, sort, referenceTime]);
+  }, [tenders, query, region, subject, budget, deadline, constructionOnly, announcementNumber, customer, method, status, amountFrom, amountTo, publishedFrom, publishedTo, endingFrom, endingTo, financialYear, sort, referenceTime, workspaceView, workflow]);
 
   const activeTender = visibleTenders.find((tender) => tender.externalId === activeId) ?? visibleTenders[0] ?? null;
   const totalBudget = visibleTenders.reduce((sum, tender) => sum + tender.budget, 0);
   const copy = sourceCopy(sourceStatus);
+
+  function workspaceCount(view: WorkspaceView) {
+    if (view === "all") return tenders.length;
+    if (view === "favorites") return tenders.filter((tender) => workflow[tender.externalId]?.isFavorite).length;
+    return tenders.filter((tender) => workflow[tender.externalId]?.stage === view).length;
+  }
+
+  async function updateWorkflow(tenderId: string, change: Partial<Pick<TenderWorkflowEntry, "isFavorite" | "stage">>) {
+    const previous = workflow[tenderId] ?? { tenderId, isFavorite: false, stage: "none" as TenderStage, updatedAt: 0 };
+    const next = { ...previous, ...change };
+    setWorkflow((current) => ({ ...current, [tenderId]: next }));
+    setSavingTenderId(tenderId);
+    setWorkflowError("");
+    try {
+      const response = await fetch("/api/tender-workflow", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tenderId, isFavorite: next.isFavorite, stage: next.stage }),
+      });
+      const result = await response.json() as { entry?: TenderWorkflowEntry | null; error?: string };
+      if (!response.ok) throw new Error(result.error || "Не удалось сохранить тендер");
+      setWorkflow((current) => {
+        const updated = { ...current };
+        if (result.entry) updated[tenderId] = result.entry;
+        else delete updated[tenderId];
+        return updated;
+      });
+    } catch (error) {
+      setWorkflow((current) => {
+        const updated = { ...current };
+        if (previous.updatedAt) updated[tenderId] = previous;
+        else delete updated[tenderId];
+        return updated;
+      });
+      setWorkflowError(error instanceof Error ? error.message : "Не удалось сохранить тендер");
+    } finally {
+      setSavingTenderId("");
+    }
+  }
 
   function resetFilters() {
     setQuery("");
@@ -260,6 +327,10 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus 
 
       <section className="workspace live-workspace">
         <div className="feed-panel">
+          <nav className="workspace-tabs" aria-label="Работа с тендерами">
+            {workspaceViews.map((view) => <button type="button" className={workspaceView === view.value ? "active" : ""} onClick={() => setWorkspaceView(view.value)} key={view.value}>{view.label}<span>{workspaceCount(view.value)}</span></button>)}
+          </nav>
+          {workflowError && <p className="workflow-error" role="alert">{workflowError}</p>}
           <div className="filters live-filters">
             <label className="search-field">
               <span aria-hidden="true">⌕</span>
@@ -315,10 +386,10 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus 
                   <div className="rank">{String(index + 1).padStart(2, "0")}</div>
                   <div className="official-mark"><span>ГЗ</span><small>официально</small></div>
                   <div className="tender-main">
-                    <div className="card-meta"><span>№ {tender.numberAnno}</span><span>{tender.methodName}</span></div>
+                    <div className="card-meta"><span>№ {tender.numberAnno}</span><span>{tender.methodName}</span><button className={`favorite-button ${workflow[tender.externalId]?.isFavorite ? "active" : ""}`} type="button" disabled={savingTenderId === tender.externalId} onClick={() => updateWorkflow(tender.externalId, { isFavorite: !workflow[tender.externalId]?.isFavorite })} aria-label={workflow[tender.externalId]?.isFavorite ? "Убрать из избранного" : "Добавить в избранное"}>★</button></div>
                     <h3>{tender.title}</h3>
                     <p className="buyer">{tender.buyer}</p>
-                    <div className="tags"><span>{tender.regionName}</span><span>{tender.subjectType}</span>{tender.isConstructionWork && <span>СМР</span>}</div>
+                    <div className="tags"><span>{tender.regionName}</span><span>{tender.subjectType}</span>{tender.isConstructionWork && <span>СМР</span>}{workflow[tender.externalId]?.stage && workflow[tender.externalId].stage !== "none" && <span className="stage-chip">{stageLabels[workflow[tender.externalId].stage]}</span>}</div>
                     <div className="reason-row factual-row"><span><b>✓</b>{tender.statusName}</span><span><b>↗</b>Обновлено в источнике</span></div>
                   </div>
                   <div className="tender-finance">
@@ -337,6 +408,10 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus 
             <>
               <div className="insight-head"><p className="section-label">КАРТОЧКА ОБЪЯВЛЕНИЯ</p><span>ГЗ</span></div>
               <h2>{activeTender.title}</h2><p className="insight-id">№ {activeTender.numberAnno}</p>
+              <div className="workflow-control">
+                <label><span>Этап участия</span><select value={workflow[activeTender.externalId]?.stage ?? "none"} disabled={savingTenderId === activeTender.externalId} onChange={(event) => updateWorkflow(activeTender.externalId, { stage: event.target.value as TenderStage })}>{Object.entries(stageLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+                <button className={workflow[activeTender.externalId]?.isFavorite ? "active" : ""} type="button" disabled={savingTenderId === activeTender.externalId} onClick={() => updateWorkflow(activeTender.externalId, { isFavorite: !workflow[activeTender.externalId]?.isFavorite })}><span aria-hidden="true">★</span>{workflow[activeTender.externalId]?.isFavorite ? "В избранном" : "В избранное"}</button>
+              </div>
               <dl className="tender-facts">
                 <div><dt>Заказчик</dt><dd>{activeTender.buyer}</dd></div>
                 <div><dt>Регион</dt><dd>{activeTender.regionName}</dd></div>

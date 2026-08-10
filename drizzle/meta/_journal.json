@@ -15,6 +15,13 @@
       "when": 1786361043960,
       "tag": "0001_fluffy_joseph",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786374947399,
+      "tag": "0002_cooing_terrax",
+      "breakpoints": true
     }
   ]
 }

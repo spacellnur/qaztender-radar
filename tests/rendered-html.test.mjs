@@ -85,6 +85,9 @@ test("administrator sees the token-waiting dashboard and can sign out", async ()
   assert.match(html, /Номер объявления/);
   assert.match(html, /Заказчик или БИН/);
   assert.match(html, /Сбросить все фильтры/);
+  assert.match(html, /Избранные/);
+  assert.match(html, /Участвуем/);
+  assert.match(html, /Заявка подана/);
   assert.doesNotMatch(html, /Демо-данные/);
 
   const sync = await request(state, "/api/tenders/sync", { method: "POST", headers: { cookie } });
@@ -101,4 +104,27 @@ test("anonymous visitors cannot start tender synchronization", async () => {
   const response = await request(state, "/api/tenders/sync", { method: "POST" });
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), { error: "Доступ запрещён" });
+});
+
+test("tender workflow endpoints require authentication", async () => {
+  const state = await loadWorker();
+  const getResponse = await request(state, "/api/tender-workflow");
+  assert.equal(getResponse.status, 403);
+  const putResponse = await request(state, "/api/tender-workflow", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ tenderId: "123", isFavorite: true, stage: "reviewing" }),
+  });
+  assert.equal(putResponse.status, 403);
+});
+
+test("tender workflow rejects unsupported stages before database access", async () => {
+  const state = await loadWorker();
+  const cookie = await adminCookie(state);
+  const response = await request(state, "/api/tender-workflow", {
+    method: "PUT",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ tenderId: "123", isFavorite: true, stage: "maybe" }),
+  });
+  assert.equal(response.status, 400);
 });

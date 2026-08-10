@@ -1,5 +1,5 @@
 import type { AppRole } from "./auth";
-import type { TenderRecord, TenderSourceStatus } from "./tender-types";
+import type { TenderRecord, TenderSourceStatus, TenderStage, TenderWorkflowEntry } from "./tender-types";
 
 export type DatabaseUser = { id: string; username: string; passwordHash: string; role: AppRole; isActive: number };
 
@@ -56,6 +56,31 @@ export async function listTenders(limit = 500): Promise<TenderRecord[]> {
     ORDER BY CASE WHEN end_date IS NULL THEN 1 ELSE 0 END, end_date ASC, budget DESC
     LIMIT ?`).bind(Math.min(Math.max(limit, 1), 1000)).all<TenderRecord>();
   return (result.results ?? []).map((row) => ({ ...row, isConstructionWork: Boolean(row.isConstructionWork) }));
+}
+
+export async function listTenderWorkflow(ownerKey: string): Promise<TenderWorkflowEntry[]> {
+  const binding = db();
+  if (!binding) return [];
+  const result = await binding.prepare(`SELECT tender_id AS tenderId, is_favorite AS isFavorite, stage, updated_at AS updatedAt
+    FROM tender_workflow WHERE owner_key = ? ORDER BY updated_at DESC`).bind(ownerKey).all<TenderWorkflowEntry>();
+  return (result.results ?? []).map((row) => ({ ...row, isFavorite: Boolean(row.isFavorite) }));
+}
+
+export async function saveTenderWorkflow(ownerKey: string, tenderId: string, isFavorite: boolean, stage: TenderStage): Promise<TenderWorkflowEntry | null> {
+  const binding = db();
+  if (!binding) throw new Error("Database is unavailable");
+  const tender = await binding.prepare("SELECT 1 AS present FROM tenders WHERE external_id = ? LIMIT 1").bind(tenderId).first();
+  if (!tender) throw new Error("Tender not found");
+  const now = Date.now();
+  if (!isFavorite && stage === "none") {
+    await binding.prepare("DELETE FROM tender_workflow WHERE owner_key = ? AND tender_id = ?").bind(ownerKey, tenderId).run();
+    return null;
+  }
+  await binding.prepare(`INSERT INTO tender_workflow (id, owner_key, tender_id, is_favorite, stage, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(owner_key, tender_id) DO UPDATE SET is_favorite=excluded.is_favorite, stage=excluded.stage, updated_at=excluded.updated_at`)
+    .bind(crypto.randomUUID(), ownerKey, tenderId, isFavorite ? 1 : 0, stage, now, now).run();
+  return { tenderId, isFavorite, stage, updatedAt: now };
 }
 
 export async function getTenderSourceStatus(configured: boolean): Promise<TenderSourceStatus> {

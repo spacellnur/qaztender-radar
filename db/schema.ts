@@ -58,6 +58,19 @@ export const tenders = sqliteTable("tenders", {
   index("idx_tenders_upstream_updated_at").on(table.upstreamUpdatedAt),
 ]);
 
+export const tenderWorkflow = sqliteTable("tender_workflow", {
+  id: text("id").primaryKey(),
+  ownerKey: text("owner_key").notNull(),
+  tenderId: text("tender_id").notNull().references(() => tenders.externalId, { onDelete: "cascade" }),
+  isFavorite: integer("is_favorite", { mode: "boolean" }).notNull().default(false),
+  stage: text("stage", { enum: ["none", "reviewing", "participating", "submitted", "won", "lost", "skipped"] }).notNull().default("none"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("idx_tender_workflow_owner_tender").on(table.ownerKey, table.tenderId),
+  index("idx_tender_workflow_owner_stage").on(table.ownerKey, table.stage),
+]);
+
 export const tenderSyncRuns = sqliteTable("tender_sync_runs", {
   id: text("id").primaryKey(),
   status: text("status", { enum: ["running", "succeeded", "failed"] }).notNull(),

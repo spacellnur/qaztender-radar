@@ -33,3 +33,12 @@ export type TenderSourceStatus = {
   lastSyncStatus: "succeeded" | "failed" | null;
   lastError: string;
 };
+
+export type TenderStage = "none" | "reviewing" | "participating" | "submitted" | "won" | "lost" | "skipped";
+
+export type TenderWorkflowEntry = {
+  tenderId: string;
+  isFavorite: boolean;
+  stage: TenderStage;
+  updatedAt: number;
+};
