@@ -192,3 +192,16 @@ test("tender detail endpoints are protected and validate the tender id", async (
   assert.equal((await request(state, "/api/tender-details", { headers: { cookie } })).status, 400);
   assert.equal((await request(state, "/api/tender-details", { method: "POST", headers: { cookie } })).status, 400);
 });
+
+test("team checklist endpoints are protected and validate administrator actions", async () => {
+  const state = await loadWorker();
+  assert.equal((await request(state, "/api/tender-tasks")).status, 403);
+  assert.equal((await request(state, "/api/tender-tasks", { method: "POST" })).status, 403);
+  assert.equal((await request(state, "/api/tender-tasks", { method: "PUT" })).status, 403);
+  assert.equal((await request(state, "/api/tender-tasks?id=example", { method: "DELETE" })).status, 403);
+  const cookie = await adminCookie(state);
+  const invalid = await request(state, "/api/tender-tasks", {
+    method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify({ action: "seed" }),
+  });
+  assert.equal(invalid.status, 400);
+});

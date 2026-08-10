@@ -126,3 +126,25 @@ export type TenderDetails = {
   documents: TenderDocument[];
   changes: TenderChange[];
 };
+
+export type TenderTask = {
+  id: string;
+  tenderId: string;
+  title: string;
+  status: "todo" | "done";
+  assignedUserId: string;
+  assignedUsername: string;
+  dueAt: number | null;
+  sortOrder: number;
+  updatedAt: number;
+};
+
+export type TaskTeamMember = {
+  id: string;
+  username: string;
+};
+
+export type TenderTaskWorkspace = {
+  tasks: TenderTask[];
+  members: TaskTeamMember[];
+};

@@ -120,6 +120,23 @@ export const tenderChanges = sqliteTable("tender_changes", {
   changedAt: integer("changed_at").notNull(),
 }, (table) => [index("idx_tender_changes_tender_changed_at").on(table.tenderId, table.changedAt)]);
 
+export const tenderTasks = sqliteTable("tender_tasks", {
+  id: text("id").primaryKey(),
+  tenderId: text("tender_id").notNull().references(() => tenders.externalId, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  status: text("status", { enum: ["todo", "done"] }).notNull().default("todo"),
+  assignedUserId: text("assigned_user_id").references(() => users.id, { onDelete: "set null" }),
+  dueAt: integer("due_at"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdByOwnerKey: text("created_by_owner_key").notNull(),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("idx_tender_tasks_tender_title").on(table.tenderId, table.title),
+  index("idx_tender_tasks_tender_sort").on(table.tenderId, table.sortOrder),
+  index("idx_tender_tasks_assignee_status").on(table.assignedUserId, table.status),
+]);
+
 export const tenderSyncRuns = sqliteTable("tender_sync_runs", {
   id: text("id").primaryKey(),
   status: text("status", { enum: ["running", "succeeded", "failed"] }).notNull(),

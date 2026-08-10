@@ -17,7 +17,8 @@ QazTender Radar must progress from a searchable announcement feed into a daily w
 - [x] (2026-08-10 15:37Z) Validated Milestone 3 locally with a successful production build, 10 passing application and matching tests, and clean lint. No schema migration was needed because the existing company profile table already stores all edited fields.
 - [ ] Milestone 4: ingest lots, ENS TRU, delivery location, documents, and change history after official API access is available. Pre-token foundation deployed: official schema confirmed; durable detail tables, protected read/on-demand synchronization, history capture, and honest empty-state tabs are live. Remaining: one real API round-trip after the token arrives.
 - [x] (2026-08-10 15:46Z) Validated the Milestone 4 pre-token foundation with an inspected additive three-table migration, successful production build, 11 passing tests, and clean lint.
-- [ ] Milestone 5: add reusable checklists, team assignments, buyer/winner analytics, and grounded document analysis.
+- [ ] Milestone 5: add reusable checklists, team assignments, buyer/winner analytics, and grounded document analysis. Team checklist slice completed locally; buyer/winner analytics and grounded document analysis remain gated by official history and files. Remaining for this slice: private deployment.
+- [x] (2026-08-10 15:54Z) Validated the Milestone 5 checklist slice with an inspected additive task migration, successful production build, 12 passing tests, and clean lint.
 
 ## Surprises & Discoveries
 
@@ -63,6 +64,10 @@ QazTender Radar must progress from a searchable announcement feed into a daily w
   Rationale: The official `Lots` query supports filtering by announcement ID and returns up to 200 rows with nested lot files. Fetching details only when an administrator requests one known announcement avoids hundreds of speculative API calls and makes the token the final missing runtime input. A later scheduler can reuse the same normalized storage functions.
   Date/Author: 2026-08-10 / Codex
 
+- Decision: Implement collaborative participation tasks before analytics or AI document assistance.
+  Rationale: A shared checklist with owners and deadlines is useful as soon as any tender exists and can be validated without external facts. Buyer analytics requires award history, and grounded document assistance requires official files plus a separately approved model key; adding either now would create empty or misleading output.
+  Date/Author: 2026-08-10 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete and deployed. The dashboard now has account-specific tabs, favorite actions, stage badges, and a detail-panel stage selector backed by an additive D1 table and protected API. The production build, six application tests, lint, archive validation, database migration, and private production deployment all succeeded. A user can exercise the full persistence round-trip as soon as the official feed contains its first tender; no further code change is required for that scenario.
@@ -72,6 +77,8 @@ Milestone 2 is complete and deployed. The dashboard now exposes `Мои поис
 Milestone 3 is complete and deployed. Tender specialists can reopen their existing onboarding form from `Профиль компании`, edit every saved field, and return to the radar. Tender cards and the selected-tender panel use a pure evidence function to label known alignment, explicit conflicts, and missing information. Tests prove both a supported construction match and a budget conflict, and confirm that license applicability remains unknown instead of being inferred. Build, ten tests, lint, archive validation, and private deployment all succeeded.
 
 The Milestone 4 pre-token foundation is deployed. D1 can now store normalized lots, files, and append-only synchronization history. The protected endpoint reads stored details for any signed-in account and allows only the super administrator to request one official announcement's details. The official query uses the confirmed announcement-id filter and nested files. The selected-tender panel exposes overview, lot, document, and history tabs with truthful empty states. The migration, build, eleven tests, lint, archive validation, database migration, and private deployment succeeded. Only the first authenticated official API round-trip remains.
+
+The Milestone 5 checklist slice is complete locally. A shared `Работа` tab now supports an idempotent six-step standard template, custom tasks, active-specialist assignment, deadlines, deletion, and a completed-versus-total progress indicator. Administrator and specialist permissions are enforced on the server; specialists can change only the completion state of tasks assigned to their own user id. The additive task migration, build, twelve tests, and lint pass. Analytics and document assistance remain truthfully deferred until official history and files exist; private deployment of the checklist remains.
 
 ## Context and Orientation
 
@@ -100,6 +107,10 @@ Pass the current specialist profile into `app/TenderDashboard.tsx`. For each ten
 For Milestone 4, use the official V3 GraphQL fields confirmed in August 2026. `Lots(filter: { trdBuyId: [...] })` returns lot id, number, status id and name, update date, quantity, amount, Russian name and description, announcement id, ENS TRU identifiers, delivery KATO values, system id, index date, and nested `Files`. A lot file supplies id, file path, original name, object id, Russian document name, index date, and system id. Store these values without interpreting legal requirements. Add separate `tender_lots`, `tender_documents`, and append-only `tender_changes` tables, all indexed by tender id.
 
 Add `getTenderDetails` and atomic detail-replacement helpers to `app/db.ts`. Add a protected `app/api/tender-details/route.ts`: GET reads stored detail for any signed-in account; POST is restricted to the super administrator and synchronizes one existing tender through the official API. Extend `app/goszakup.ts` with the exact lot query and normalization. Add `Обзор`, `Лоты`, `Документы`, and `История` tabs to the selected-tender panel. With no token or no stored detail, the tabs explain what is missing; they never display sample lots or invented files.
+
+For the first independently useful part of Milestone 5, add a `tender_tasks` D1 table with tender, title, completion status, optional tender-specialist assignee, optional due date, order, creator key, and timestamps. Add protected task APIs. Every signed-in account can read the shared checklist. Only the super administrator can create the standard template, add or delete tasks, change assignees, or change deadlines. A tender specialist may mark only a task assigned to that specialist complete or incomplete.
+
+Add a `Работа` tab to the selected-tender panel. When empty, the administrator can create a standard six-step participation checklist covering lot review, qualification and license review, pricing, bid security, document assembly, and final submission review. The administrator can add custom steps, assign an active tender specialist, set a date, and remove a step. The panel shows completed versus total tasks, and assigned specialists can check off their own work. This is shared company state, unlike personal favorites and saved searches.
 
 Later milestones are intentionally ordered by dependency. Saved searches need the existing filter model; alerts need saved searches plus live synchronization; explainable matching needs editable company profiles and lot requirements; checklists and AI document analysis need official documents; historical analytics need enough awards and contracts to avoid misleading conclusions.
 
@@ -132,6 +143,8 @@ Milestone 2 acceptance is observable without live tenders: an authenticated user
 Milestone 3 acceptance is observable by signing in as a tender specialist, opening `Профиль компании`, changing a region or maximum budget, saving, and returning to the radar. Tender cards and the detail panel then explain changed matches using only the saved profile and official announcement fields. The super administrator cannot edit a specialist's company profile, anonymous visitors cannot use the profile API, and no label claims that a license is valid for a tender without document evidence.
 
 Milestone 4 pre-token acceptance is observable immediately: the detail card has four tabs, empty tabs state that official detail is not yet loaded, anonymous detail requests are rejected, and non-administrators cannot start a detail synchronization. After the token exists and at least one announcement is stored, the administrator can request its details; the official lot count, amounts, ENS TRU identifiers, delivery KATO values, file names and links appear, and an append-only synchronization event appears in history. Repeating the operation safely replaces the current snapshot while preserving history.
+
+Milestone 5 checklist acceptance is observable with any stored tender: the administrator creates the standard template once without duplicates, assigns a specialist and a deadline, and can add or delete a custom step. That specialist can mark the assigned step done and can reopen it, while another specialist receives 403 for the same write. All signed-in team members see the same progress count after reload. Anonymous task requests return 403. Analytics and document assistance remain explicitly unavailable until their factual inputs exist.
 
 ## Idempotence and Recovery
 
@@ -187,3 +200,7 @@ Revision note (2026-08-10 15:43Z): Started Milestone 4 after checking the curren
 Revision note (2026-08-10 15:46Z): Recorded the complete pre-token implementation, inspected three-table migration, official query wiring, and successful build, eleven-test, and lint evidence. Deployment and the first real token-backed request remain.
 
 Revision note (2026-08-10 15:48Z): Deployed the Milestone 4 pre-token foundation. The token-backed round-trip is now the only open acceptance item for this milestone.
+
+Revision note (2026-08-10 15:52Z): Started Milestone 5 with the collaborative checklist slice. Defined shared task ownership, administrator controls, specialist completion permissions, a reusable standard template, and the deliberate deferral of analytics and document assistance.
+
+Revision note (2026-08-10 15:54Z): Recorded the completed local checklist slice, inspected task migration, server-enforced role boundaries, and successful build, twelve-test, and lint evidence. Deployment remains for this slice.

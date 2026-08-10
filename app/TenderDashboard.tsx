@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { AlertFrequency, CompanyProfile, SavedSearch, TenderDetails, TenderRecord, TenderSearchFilters, TenderSourceStatus, TenderStage, TenderWorkflowEntry } from "./tender-types";
+import type { AlertFrequency, CompanyProfile, SavedSearch, TenderDetails, TenderRecord, TenderSearchFilters, TenderSourceStatus, TenderStage, TenderTask, TenderTaskWorkspace, TenderWorkflowEntry } from "./tender-types";
 import { explainTenderMatch } from "./tender-matching";
 
 type Props = {
@@ -15,9 +15,10 @@ type Props = {
 };
 
 type WorkspaceView = "all" | "favorites" | Exclude<TenderStage, "none" | "skipped">;
-type DetailTab = "overview" | "lots" | "documents" | "history";
+type DetailTab = "overview" | "lots" | "documents" | "history" | "tasks";
 
 const emptyDetails: TenderDetails = { lots: [], documents: [], changes: [] };
+const emptyTaskWorkspace: TenderTaskWorkspace = { tasks: [], members: [] };
 
 const stageLabels: Record<TenderStage, string> = {
   none: "Не выбрано",
@@ -98,6 +99,11 @@ function yearInKazakhstan(timestamp: number | null): number | null {
   return new Date(timestamp + 5 * 60 * 60 * 1000).getUTCFullYear();
 }
 
+function taskDateValue(timestamp: number | null): string {
+  if (!timestamp) return "";
+  return new Date(timestamp + 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
 function sourceCopy(status: TenderSourceStatus) {
   if (status.state === "waiting_token") return {
     label: "Ожидается API-токен",
@@ -159,6 +165,10 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus,
   const [detailsMessage, setDetailsMessage] = useState("");
   const [detailsRefresh, setDetailsRefresh] = useState(0);
   const [syncingDetails, setSyncingDetails] = useState(false);
+  const [taskWorkspace, setTaskWorkspace] = useState<TenderTaskWorkspace>(emptyTaskWorkspace);
+  const [taskMessage, setTaskMessage] = useState("");
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [updatingTask, setUpdatingTask] = useState(false);
 
   const subjectOptions = useMemo(
     () => Array.from(new Set(tenders.map((tender) => tender.subjectType).filter((value) => value && value !== "Не указан"))).sort(),
@@ -245,8 +255,45 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus,
     return () => controller.abort();
   }, [activeTender, detailsRefresh]);
 
+  useEffect(() => {
+    if (!activeTender) return;
+    const controller = new AbortController();
+    fetch(`/api/tender-tasks?tenderId=${encodeURIComponent(activeTender.externalId)}`, { signal: controller.signal })
+      .then(async (response) => {
+        const result = await response.json() as { workspace?: TenderTaskWorkspace; error?: string };
+        if (!response.ok || !result.workspace) throw new Error(result.error || "Не удалось загрузить рабочий план");
+        setTaskWorkspace(result.workspace);
+      })
+      .catch((error) => { if (error instanceof Error && error.name !== "AbortError") setTaskMessage(error.message); });
+    return () => controller.abort();
+  }, [activeTender]);
+
   function selectTender(tenderId: string) {
-    setActiveId(tenderId); setDetailTab("overview"); setTenderDetails(emptyDetails); setDetailsLoading(true); setDetailsMessage("");
+    setActiveId(tenderId); setDetailTab("overview"); setTenderDetails(emptyDetails); setDetailsLoading(true); setDetailsMessage(""); setTaskWorkspace(emptyTaskWorkspace); setTaskMessage("");
+  }
+
+  async function taskRequest(method: "POST" | "PUT" | "DELETE", body?: Record<string, unknown>, id?: string) {
+    if (!activeTender) return false;
+    setUpdatingTask(true); setTaskMessage("");
+    try {
+      const url = id ? `/api/tender-tasks?id=${encodeURIComponent(id)}` : "/api/tender-tasks";
+      const response = await fetch(url, { method, headers: body ? { "content-type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
+      const result = await response.json() as { workspace?: TenderTaskWorkspace; error?: string };
+      if (!response.ok) throw new Error(result.error || "Не удалось обновить рабочий план");
+      if (result.workspace) setTaskWorkspace(result.workspace);
+      else if (method === "DELETE") setTaskWorkspace((current) => ({ ...current, tasks: current.tasks.filter((task) => task.id !== id) }));
+      return true;
+    } catch (error) { setTaskMessage(error instanceof Error ? error.message : "Не удалось обновить рабочий план"); return false; }
+    finally { setUpdatingTask(false); }
+  }
+
+  async function createTask() {
+    if (!activeTender || !newTaskTitle.trim()) { setTaskMessage("Введите название задачи"); return; }
+    if (await taskRequest("POST", { tenderId: activeTender.externalId, action: "create", title: newTaskTitle })) setNewTaskTitle("");
+  }
+
+  function updateTask(task: TenderTask, change: Partial<Pick<TenderTask, "status" | "assignedUserId" | "dueAt">>) {
+    return taskRequest("PUT", { id: task.id, status: change.status ?? task.status, assignedUserId: change.assignedUserId ?? task.assignedUserId, dueAt: change.dueAt === undefined ? task.dueAt : change.dueAt });
   }
 
   async function synchronizeDetails() {
@@ -535,7 +582,7 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus,
                 <button className={workflow[activeTender.externalId]?.isFavorite ? "active" : ""} type="button" disabled={savingTenderId === activeTender.externalId} onClick={() => updateWorkflow(activeTender.externalId, { isFavorite: !workflow[activeTender.externalId]?.isFavorite })}><span aria-hidden="true">★</span>{workflow[activeTender.externalId]?.isFavorite ? "В избранном" : "В избранное"}</button>
               </div>
               <nav className="detail-tabs" aria-label="Разделы объявления">
-                {([['overview', 'Обзор'], ['lots', `Лоты ${tenderDetails.lots.length || ''}`], ['documents', `Документы ${tenderDetails.documents.length || ''}`], ['history', 'История']] as Array<[DetailTab, string]>).map(([value, label]) => <button type="button" className={detailTab === value ? "active" : ""} onClick={() => setDetailTab(value)} key={value}>{label}</button>)}
+                {([['overview', 'Обзор'], ['lots', `Лоты ${tenderDetails.lots.length || ''}`], ['documents', `Документы ${tenderDetails.documents.length || ''}`], ['history', 'История'], ['tasks', `Работа ${taskWorkspace.tasks.length || ''}`]] as Array<[DetailTab, string]>).map(([value, label]) => <button type="button" className={detailTab === value ? "active" : ""} onClick={() => setDetailTab(value)} key={value}>{label}</button>)}
               </nav>
               {detailsMessage && <p className="detail-message" role="status">{detailsMessage}</p>}
               {detailTab === "overview" && <>{activeMatch && <section className={`match-explanation ${activeMatch.status}`}>
@@ -557,6 +604,19 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus,
               {detailTab === "lots" && <div className="detail-content">{detailsLoading ? <p>Загружаем лоты…</p> : tenderDetails.lots.length ? tenderDetails.lots.map((lot) => <article className="lot-item" key={lot.externalId}><div><small>ЛОТ № {lot.lotNumber}</small><strong>{lot.title}</strong></div><b>{money.format(lot.amount)}</b><p>{lot.description || "Описание не указано"}</p><dl><div><dt>Статус</dt><dd>{lot.statusName}</dd></div><div><dt>Количество</dt><dd>{lot.quantity || "Не указано"}</dd></div><div><dt>ЕНС ТРУ</dt><dd>{lot.enstruIds.length ? lot.enstruIds.join(", ") : "Не указано"}</dd></div><div><dt>Место поставки</dt><dd>{lot.deliveryKato.length ? lot.deliveryKato.join(", ") : "Не указано"}</dd></div></dl></article>) : <div className="detail-empty"><strong>Лоты ещё не загружены</strong><p>{sourceStatus.configured ? "Запустите загрузку официальных деталей объявления." : "После добавления API-токена здесь появятся официальные лоты, ЕНС ТРУ и места поставки."}</p>{role === "super_admin" && <button type="button" disabled={!sourceStatus.configured || syncingDetails} onClick={synchronizeDetails}>{syncingDetails ? "Загружаем…" : sourceStatus.configured ? "Загрузить детали" : "Ожидается токен"}</button>}</div>}</div>}
               {detailTab === "documents" && <div className="detail-content">{detailsLoading ? <p>Загружаем документы…</p> : tenderDetails.documents.length ? <div className="document-list">{tenderDetails.documents.map((document) => <article key={document.externalId}><div><strong>{document.name}</strong><small>{document.originalName || `Документ лота ${document.lotId}`}</small></div>{document.url ? <a href={document.url} target="_blank" rel="noreferrer">Открыть ↗</a> : <span>Ссылка не указана</span>}</article>)}</div> : <div className="detail-empty"><strong>Документы ещё не загружены</strong><p>Файлы будут показаны только после получения их из официального API. Здесь нет демонстрационных документов.</p></div>}</div>}
               {detailTab === "history" && <div className="detail-content">{detailsLoading ? <p>Загружаем историю…</p> : tenderDetails.changes.length ? <ol className="change-list">{tenderDetails.changes.map((change) => <li key={change.id}><span>{dateTime.format(change.changedAt)}</span><strong>{change.title}</strong></li>)}</ol> : <div className="detail-empty"><strong>История пока пуста</strong><p>После первой синхронизации здесь появятся подтверждённые события обновления.</p></div>}</div>}
+              {detailTab === "tasks" && <div className="detail-content task-workspace">
+                <div className="task-progress"><div><span>ГОТОВНОСТЬ К ПОДАЧЕ</span><strong>{taskWorkspace.tasks.filter((task) => task.status === "done").length} из {taskWorkspace.tasks.length}</strong></div><div><span style={{ width: `${taskWorkspace.tasks.length ? taskWorkspace.tasks.filter((task) => task.status === "done").length / taskWorkspace.tasks.length * 100 : 0}%` }} /></div></div>
+                {taskMessage && <p className="task-message" role="status">{taskMessage}</p>}
+                {taskWorkspace.tasks.length ? <div className="task-list">{taskWorkspace.tasks.map((task) => {
+                  const canComplete = role === "super_admin" || task.assignedUsername === username;
+                  return <article className={task.status === "done" ? "done" : ""} key={task.id}>
+                    <label className="task-check"><input type="checkbox" checked={task.status === "done"} disabled={!canComplete || updatingTask} onChange={(event) => updateTask(task, { status: event.target.checked ? "done" : "todo" })} /><span>{task.title}</span></label>
+                    {role === "super_admin" ? <><select value={task.assignedUserId} disabled={updatingTask} onChange={(event) => updateTask(task, { assignedUserId: event.target.value })} aria-label={`Ответственный за ${task.title}`}><option value="">Не назначен</option>{taskWorkspace.members.map((member) => <option value={member.id} key={member.id}>{member.username}</option>)}</select><input type="date" value={taskDateValue(task.dueAt)} disabled={updatingTask} onChange={(event) => updateTask(task, { dueAt: event.target.value ? Date.parse(`${event.target.value}T00:00:00+05:00`) : null })} aria-label={`Срок задачи ${task.title}`} /><button className="task-delete" type="button" disabled={updatingTask} onClick={() => taskRequest("DELETE", undefined, task.id)} aria-label={`Удалить задачу ${task.title}`}>×</button></> : <div className="task-assignment"><span>{task.assignedUsername || "Не назначено"}</span><small>{task.dueAt ? `до ${new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeZone: "Asia/Almaty" }).format(task.dueAt)}` : "без срока"}</small></div>}
+                  </article>;
+                })}</div> : <div className="detail-empty"><strong>Рабочий план ещё не создан</strong><p>Стандартный чек-лист поможет команде пройти от проверки лотов до финальной подачи заявки.</p>{role === "super_admin" && <button type="button" disabled={updatingTask} onClick={() => activeTender && taskRequest("POST", { tenderId: activeTender.externalId, action: "seed" })}>Создать стандартный чек-лист</button>}</div>}
+                {role === "super_admin" && taskWorkspace.tasks.length > 0 && <div className="new-task-form"><input value={newTaskTitle} maxLength={140} onChange={(event) => setNewTaskTitle(event.target.value)} placeholder="Добавить свой шаг" aria-label="Название новой задачи" /><button type="button" disabled={updatingTask} onClick={createTask}>Добавить</button></div>}
+                <p className="future-capability">Аналитика заказчика появится после накопления истории закупок. Анализ требований появится только для официально загруженных документов.</p>
+              </div>}
             </>
           ) : (
             <div className="panel-waiting"><span>QT</span><h2>Карточка появится после загрузки</h2><p>Здесь будут только фактические сведения из официального объявления — без выдуманных оценок и рисков.</p></div>

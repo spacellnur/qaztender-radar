@@ -1,5 +1,5 @@
 import type { AppRole } from "./auth";
-import type { AlertFrequency, CompanyProfile, SavedSearch, TenderDetails, TenderDocument, TenderLot, TenderRecord, TenderSearchFilters, TenderSourceStatus, TenderStage, TenderWorkflowEntry } from "./tender-types";
+import type { AlertFrequency, CompanyProfile, SavedSearch, TaskTeamMember, TenderDetails, TenderDocument, TenderLot, TenderRecord, TenderSearchFilters, TenderSourceStatus, TenderStage, TenderTask, TenderTaskWorkspace, TenderWorkflowEntry } from "./tender-types";
 
 export type DatabaseUser = { id: string; username: string; passwordHash: string; role: AppRole; isActive: number };
 
@@ -180,6 +180,72 @@ export async function replaceTenderDetails(tenderId: string, lots: TenderLot[], 
       .bind(crypto.randomUUID(), tenderId, `Синхронизировано: ${lots.length} лотов, ${documents.length} документов`, now),
   ];
   await binding.batch(statements);
+}
+
+const standardTaskTitles = [
+  "Изучить лоты, техническое задание и сроки",
+  "Проверить квалификационные требования и лицензии",
+  "Подготовить расчёт цены и запросить предложения",
+  "Проверить обеспечение заявки и финансовые условия",
+  "Собрать справки, разрешения и остальные документы",
+  "Провести финальную проверку и подать заявку",
+];
+
+export async function getTenderTaskWorkspace(tenderId: string): Promise<TenderTaskWorkspace> {
+  const binding = db();
+  if (!binding) return { tasks: [], members: [] };
+  const [tasksResult, membersResult] = await Promise.all([
+    binding.prepare(`SELECT t.id, t.tender_id AS tenderId, t.title, t.status, COALESCE(t.assigned_user_id, '') AS assignedUserId,
+      COALESCE(u.username, '') AS assignedUsername, t.due_at AS dueAt, t.sort_order AS sortOrder, t.updated_at AS updatedAt
+      FROM tender_tasks t LEFT JOIN users u ON u.id = t.assigned_user_id WHERE t.tender_id = ? ORDER BY t.sort_order, t.created_at`)
+      .bind(tenderId).all<TenderTask>(),
+    binding.prepare("SELECT id, username FROM users WHERE role = 'tender_specialist' AND is_active = 1 ORDER BY username")
+      .all<TaskTeamMember>(),
+  ]);
+  return { tasks: tasksResult.results ?? [], members: membersResult.results ?? [] };
+}
+
+export async function seedTenderTaskTemplate(tenderId: string, creatorKey: string): Promise<void> {
+  const binding = db();
+  if (!binding) throw new Error("Database is unavailable");
+  if (!await tenderExists(tenderId)) throw new Error("Tender not found");
+  const now = Date.now();
+  await binding.batch(standardTaskTitles.map((title, index) => binding.prepare(`INSERT OR IGNORE INTO tender_tasks
+    (id, tender_id, title, status, assigned_user_id, due_at, sort_order, created_by_owner_key, created_at, updated_at)
+    VALUES (?, ?, ?, 'todo', NULL, NULL, ?, ?, ?, ?)`)
+    .bind(crypto.randomUUID(), tenderId, title, index, creatorKey, now, now)));
+}
+
+export async function createTenderTask(tenderId: string, title: string, creatorKey: string): Promise<TenderTask> {
+  const binding = db();
+  if (!binding) throw new Error("Database is unavailable");
+  if (!await tenderExists(tenderId)) throw new Error("Tender not found");
+  const maximum = await binding.prepare("SELECT COALESCE(MAX(sort_order), -1) AS value FROM tender_tasks WHERE tender_id = ?").bind(tenderId).first<{ value: number }>();
+  const now = Date.now(); const id = crypto.randomUUID(); const sortOrder = Number(maximum?.value ?? -1) + 1;
+  await binding.prepare(`INSERT INTO tender_tasks (id, tender_id, title, status, assigned_user_id, due_at, sort_order, created_by_owner_key, created_at, updated_at)
+    VALUES (?, ?, ?, 'todo', NULL, NULL, ?, ?, ?, ?)`).bind(id, tenderId, title, sortOrder, creatorKey, now, now).run();
+  return { id, tenderId, title, status: "todo", assignedUserId: "", assignedUsername: "", dueAt: null, sortOrder, updatedAt: now };
+}
+
+export async function getTenderTask(taskId: string): Promise<TenderTask | null> {
+  return (await db()?.prepare(`SELECT t.id, t.tender_id AS tenderId, t.title, t.status, COALESCE(t.assigned_user_id, '') AS assignedUserId,
+    COALESCE(u.username, '') AS assignedUsername, t.due_at AS dueAt, t.sort_order AS sortOrder, t.updated_at AS updatedAt
+    FROM tender_tasks t LEFT JOIN users u ON u.id = t.assigned_user_id WHERE t.id = ? LIMIT 1`).bind(taskId).first<TenderTask>()) ?? null;
+}
+
+export async function updateTenderTask(taskId: string, status: "todo" | "done", assignedUserId: string, dueAt: number | null): Promise<void> {
+  const binding = db();
+  if (!binding) throw new Error("Database is unavailable");
+  if (assignedUserId && !await binding.prepare("SELECT 1 AS present FROM users WHERE id = ? AND role = 'tender_specialist' AND is_active = 1 LIMIT 1").bind(assignedUserId).first()) throw new Error("Assignee not found");
+  await binding.prepare("UPDATE tender_tasks SET status = ?, assigned_user_id = NULLIF(?, ''), due_at = ?, updated_at = ? WHERE id = ?")
+    .bind(status, assignedUserId, dueAt, Date.now(), taskId).run();
+}
+
+export async function deleteTenderTask(taskId: string): Promise<boolean> {
+  const binding = db();
+  if (!binding) throw new Error("Database is unavailable");
+  const result = await binding.prepare("DELETE FROM tender_tasks WHERE id = ?").bind(taskId).run();
+  return Number(result.meta.changes ?? 0) > 0;
 }
 
 export async function getTenderSourceStatus(configured: boolean): Promise<TenderSourceStatus> {
