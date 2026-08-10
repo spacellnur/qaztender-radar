@@ -11,7 +11,7 @@ QazTender Radar must progress from a searchable announcement feed into a daily w
 - [x] (2026-08-10 15:11Z) Reviewed the competitor analysis, durable project memory, authentication model, D1 access layer, current tender dashboard, migration tooling, tests, and Sites deployment requirements.
 - [x] (2026-08-10 15:16Z) Milestone 1: persisted favorites and participation stages per signed-in account, exposed a protected API, and integrated workspace tabs and actions into the dashboard.
 - [x] (2026-08-10 15:19Z) Validated Milestone 1 with an inspected additive migration, successful production build, 6 passing application tests, clean lint, and successful private Sites deployment. A real-tender click-through remains unavailable only because the official feed still awaits its API token.
-- [ ] Milestone 2: add named saved searches and notification preferences, followed by Telegram/email delivery once a real feed can trigger them. Completed locally: durable account-owned search presets, restore/delete controls, and `off`/`instant`/`daily` alert frequency. Remaining: private deployment.
+- [x] (2026-08-10 15:31Z) Milestone 2: deployed named saved searches, restore/delete controls, and `off`/`instant`/`daily` notification preferences. Actual Telegram/email delivery remains intentionally deferred until a real feed and delivery channel are connected.
 - [x] (2026-08-10 15:29Z) Validated Milestone 2 locally with an inspected additive migration, successful production build, 8 passing application tests, and clean lint.
 - [ ] Milestone 3: make company profiles editable and add explainable tender-to-company matching based only on available evidence.
 - [ ] Milestone 4: ingest lots, ENS TRU, delivery location, documents, and change history after official API access is available.
@@ -57,7 +57,7 @@ QazTender Radar must progress from a searchable announcement feed into a daily w
 
 Milestone 1 is complete and deployed. The dashboard now has account-specific tabs, favorite actions, stage badges, and a detail-panel stage selector backed by an additive D1 table and protected API. The production build, six application tests, lint, archive validation, database migration, and private production deployment all succeeded. A user can exercise the full persistence round-trip as soon as the official feed contains its first tender; no further code change is required for that scenario.
 
-Milestone 2 is complete locally. The dashboard now exposes `Мои поиски`, captures the entire current filter state, restores it in one action, stores an honest future alert frequency, and lets the owner delete the preset. The new API derives ownership from the signed session, and the additive migration creates only `saved_searches` plus its owner/name and owner/update indexes. The production build, eight application tests, and lint pass; private deployment remains.
+Milestone 2 is complete and deployed. The dashboard now exposes `Мои поиски`, captures the entire current filter state, restores it in one action, stores an honest future alert frequency, and lets the owner delete the preset. The new API derives ownership from the signed session, and the additive migration creates only `saved_searches` plus its owner/name and owner/update indexes. The production build, eight application tests, lint, archive validation, database migration, and private deployment all succeeded. Telegram/email transport remains a later connection task rather than a hidden or simulated feature.
 
 ## Context and Orientation
 
@@ -147,3 +147,5 @@ Revision note (2026-08-10 15:19Z): Closed Milestone 1 after successful private p
 Revision note (2026-08-10 15:24Z): Started Milestone 2. Defined the saved-filter snapshot, account ownership, honest pre-delivery alert preferences, API behavior, interface, and acceptance criteria.
 
 Revision note (2026-08-10 15:29Z): Recorded the completed local Milestone 2 implementation, inspected migration, and successful build, eight-test, and lint evidence. Deployment is the remaining checkpoint.
+
+Revision note (2026-08-10 15:31Z): Closed Milestone 2 after successful private deployment and clarified that only real message delivery remains dependent on the official feed and channel integration.
