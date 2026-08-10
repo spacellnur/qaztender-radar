@@ -11,8 +11,8 @@ Users should be able to narrow the tender feed with the most useful controls fro
 - [x] (2026-08-10 14:42Z) Inspected the existing dashboard, stored tender fields, Goszakup announcement adapter, styles, tests, and hosting configuration.
 - [x] (2026-08-10 14:48Z) Implemented advanced filter state, data-derived options, inclusive amount/date/year filtering, active-filter count, and complete reset behavior in `app/TenderDashboard.tsx`.
 - [x] (2026-08-10 14:48Z) Added responsive, accessible styling for the expandable filter panel in `app/globals.css`.
-- [x] (2026-08-10 14:51Z) Extended rendered HTML coverage; the production build completed, all 4 Node tests passed, and ESLint passed.
-- [ ] Publish the validated site and record the deployed result.
+- [x] (2026-08-10 14:47Z) Extended rendered HTML coverage; the production build completed, all 4 Node tests passed, and ESLint passed.
+- [x] (2026-08-10 14:49Z) Published private Sites version 7 and opened `https://qaztender-radar-demo.carmarew.chatgpt.site` in Codex.
 
 ## Surprises & Discoveries
 
@@ -41,7 +41,9 @@ Users should be able to narrow the tender feed with the most useful controls fro
 
 ## Outcomes & Retrospective
 
-Implementation is in progress. At completion this section will record the behavior delivered, validation evidence, deployment result, and any remaining lot-level work.
+The dashboard now offers a compact everyday search plus an expandable advanced panel for announcement number, customer or BIN, method, status, custom amount bounds, publication dates, submission-end dates, and financial year. Options come from actual saved records, filters update the result count and total immediately, and a single reset clears every condition. The production build completed, all four application tests passed, and ESLint passed. Private Sites version 7 was published successfully at `https://qaztender-radar-demo.carmarew.chatgpt.site`.
+
+The original purpose was met for announcement-level data without inventing unsupported lot fields. Lot number, procurement-plan number, ENS TRU, delivery location, and protocol dates remain a later milestone that must extend the official feed and stored record shape after API access is available.
 
 ## Context and Orientation
 
@@ -61,11 +63,11 @@ In `tests/rendered-html.test.mjs`, verify that an authenticated administrator re
 
 Run all commands from `C:\Users\aidar\Documents\Codex\2026-08-10\sites-plugin-sites-openai-bundled`.
 
-Edit the dashboard and styles with repository-safe patches, then run:
+Edit the dashboard and styles with repository-safe patches. In an environment with npm available, run:
 
     npm test
 
-Expect the production build to complete and all Node tests to pass. Then run:
+In the Codex desktop shell used for this implementation, the equivalent validated sequence was `pnpm build` followed by `node --test tests/rendered-html.test.mjs`, because npm was unavailable. Expect the production build to complete and all four Node tests to pass. Then run:
 
     npm run lint
 
@@ -85,6 +87,20 @@ The changes are source-only and do not alter the database, migrations, stored te
 
 The source screenshot from the user shows the official `Реестр лотов` search form with many fields. This implementation deliberately translates the subset supported by `TrdBuy` announcement data rather than visually cloning that portal. Lot number, procurement-plan number, ENS TRU, delivery location, result-protocol dates, and lot-specific acceptance dates remain future work because they require a lot-level source and additional stored columns.
 
+Validation evidence:
+
+    Build complete. Run `vinext start` to start the production server.
+    tests 4
+    pass 4
+    fail 0
+    eslint exited with code 0
+
+Deployment evidence:
+
+    Sites version: 7
+    Deployment status: succeeded
+    URL: https://qaztender-radar-demo.carmarew.chatgpt.site
+
 ## Interfaces and Dependencies
 
 No new library or external service is required. `TenderDashboard` continues to accept the existing `TenderRecord[]` and `TenderSourceStatus` props. New helper functions inside `app/TenderDashboard.tsx` must safely convert optional numeric input and inclusive date input without throwing. No public API, database schema, or Goszakup request changes are part of this milestone.
@@ -93,4 +109,6 @@ Revision note (2026-08-10 14:42Z): Created the initial self-contained plan after
 
 Revision note (2026-08-10 14:48Z): Updated progress after completing the dashboard, styling, and rendered-HTML test edits. Validation and deployment remain.
 
-Revision note (2026-08-10 14:51Z): Recorded successful build, four passing application tests, successful lint, and the environment-specific pnpm validation route. Publication remains.
+Revision note (2026-08-10 14:47Z): Recorded successful build, four passing application tests, successful lint, and the environment-specific pnpm validation route. Publication remains.
+
+Revision note (2026-08-10 14:49Z): Finalized the living plan after private Sites version 7 deployed successfully. Added the observable outcome, validation evidence, deployed URL, and the intentionally deferred lot-level fields.
