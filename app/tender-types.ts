@@ -88,3 +88,41 @@ export type CompanyProfile = {
   maxBudget: number;
   updatedAt: number;
 };
+
+export type TenderLot = {
+  externalId: string;
+  tenderId: string;
+  lotNumber: string;
+  title: string;
+  description: string;
+  statusName: string;
+  amount: number;
+  quantity: number;
+  enstruIds: number[];
+  deliveryKato: string[];
+  upstreamUpdatedAt: string;
+};
+
+export type TenderDocument = {
+  externalId: string;
+  tenderId: string;
+  lotId: string;
+  name: string;
+  originalName: string;
+  url: string;
+  upstreamUpdatedAt: string;
+};
+
+export type TenderChange = {
+  id: string;
+  tenderId: string;
+  action: "sync" | "update" | "delete";
+  title: string;
+  changedAt: number;
+};
+
+export type TenderDetails = {
+  lots: TenderLot[];
+  documents: TenderDocument[];
+  changes: TenderChange[];
+};

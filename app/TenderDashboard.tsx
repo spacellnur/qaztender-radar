@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { AlertFrequency, CompanyProfile, SavedSearch, TenderRecord, TenderSearchFilters, TenderSourceStatus, TenderStage, TenderWorkflowEntry } from "./tender-types";
+import { useEffect, useMemo, useState } from "react";
+import type { AlertFrequency, CompanyProfile, SavedSearch, TenderDetails, TenderRecord, TenderSearchFilters, TenderSourceStatus, TenderStage, TenderWorkflowEntry } from "./tender-types";
 import { explainTenderMatch } from "./tender-matching";
 
 type Props = {
@@ -15,6 +15,9 @@ type Props = {
 };
 
 type WorkspaceView = "all" | "favorites" | Exclude<TenderStage, "none" | "skipped">;
+type DetailTab = "overview" | "lots" | "documents" | "history";
+
+const emptyDetails: TenderDetails = { lots: [], documents: [], changes: [] };
 
 const stageLabels: Record<TenderStage, string> = {
   none: "Не выбрано",
@@ -150,6 +153,12 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus,
   const [newAlertFrequency, setNewAlertFrequency] = useState<AlertFrequency>("off");
   const [savingSearch, setSavingSearch] = useState(false);
   const [savedSearchMessage, setSavedSearchMessage] = useState("");
+  const [detailTab, setDetailTab] = useState<DetailTab>("overview");
+  const [tenderDetails, setTenderDetails] = useState<TenderDetails>(emptyDetails);
+  const [detailsLoading, setDetailsLoading] = useState(tenders.length > 0);
+  const [detailsMessage, setDetailsMessage] = useState("");
+  const [detailsRefresh, setDetailsRefresh] = useState(0);
+  const [syncingDetails, setSyncingDetails] = useState(false);
 
   const subjectOptions = useMemo(
     () => Array.from(new Set(tenders.map((tender) => tender.subjectType).filter((value) => value && value !== "Не указан"))).sort(),
@@ -221,6 +230,37 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus,
   const activeMatch = activeTender && companyProfile ? explainTenderMatch(activeTender, companyProfile) : null;
   const totalBudget = visibleTenders.reduce((sum, tender) => sum + tender.budget, 0);
   const copy = sourceCopy(sourceStatus);
+
+  useEffect(() => {
+    if (!activeTender) return;
+    const controller = new AbortController();
+    fetch(`/api/tender-details?tenderId=${encodeURIComponent(activeTender.externalId)}`, { signal: controller.signal })
+      .then(async (response) => {
+        const result = await response.json() as { details?: TenderDetails; error?: string };
+        if (!response.ok || !result.details) throw new Error(result.error || "Не удалось загрузить детали");
+        setTenderDetails(result.details);
+      })
+      .catch((error) => { if (error instanceof Error && error.name !== "AbortError") setDetailsMessage(error.message); })
+      .finally(() => { if (!controller.signal.aborted) setDetailsLoading(false); });
+    return () => controller.abort();
+  }, [activeTender, detailsRefresh]);
+
+  function selectTender(tenderId: string) {
+    setActiveId(tenderId); setDetailTab("overview"); setTenderDetails(emptyDetails); setDetailsLoading(true); setDetailsMessage("");
+  }
+
+  async function synchronizeDetails() {
+    if (!activeTender) return;
+    setSyncingDetails(true); setDetailsMessage("");
+    try {
+      const response = await fetch(`/api/tender-details?tenderId=${encodeURIComponent(activeTender.externalId)}`, { method: "POST" });
+      const result = await response.json() as { lots?: number; documents?: number; error?: string };
+      if (!response.ok) throw new Error(result.error || "Не удалось загрузить детали");
+      setDetailsMessage(`Загружено: ${result.lots ?? 0} лотов, ${result.documents ?? 0} документов`);
+      setDetailsRefresh((value) => value + 1);
+    } catch (error) { setDetailsMessage(error instanceof Error ? error.message : "Не удалось загрузить детали"); }
+    finally { setSyncingDetails(false); }
+  }
 
   function currentFilters(): TenderSearchFilters {
     return { query, region, subject, budget, deadline, constructionOnly, announcementNumber, customer, method, status, amountFrom, amountTo, publishedFrom, publishedTo, endingFrom, endingTo, financialYear, sort };
@@ -477,7 +517,7 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus,
                   <div className="tender-finance">
                     <small>БЮДЖЕТ</small><strong>{money.format(tender.budget)}</strong>
                     <div className={`deadline ${days !== null && days <= 5 ? "urgent" : ""}`}><small>ДО ПОДАЧИ</small><b>{days === null ? "Не указан" : days < 0 ? "Срок истёк" : `${days} дн.`}</b><span>{tender.endDate ? dateTime.format(tender.endDate) : "Нет даты"}</span></div>
-                    <button type="button" onClick={() => setActiveId(tender.externalId)} aria-label={`Открыть ${tender.title}`}>Подробнее <span>↗</span></button>
+                    <button type="button" onClick={() => selectTender(tender.externalId)} aria-label={`Открыть ${tender.title}`}>Подробнее <span>↗</span></button>
                   </div>
                 </article>
               );
@@ -494,7 +534,11 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus,
                 <label><span>Этап участия</span><select value={workflow[activeTender.externalId]?.stage ?? "none"} disabled={savingTenderId === activeTender.externalId} onChange={(event) => updateWorkflow(activeTender.externalId, { stage: event.target.value as TenderStage })}>{Object.entries(stageLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
                 <button className={workflow[activeTender.externalId]?.isFavorite ? "active" : ""} type="button" disabled={savingTenderId === activeTender.externalId} onClick={() => updateWorkflow(activeTender.externalId, { isFavorite: !workflow[activeTender.externalId]?.isFavorite })}><span aria-hidden="true">★</span>{workflow[activeTender.externalId]?.isFavorite ? "В избранном" : "В избранное"}</button>
               </div>
-              {activeMatch && <section className={`match-explanation ${activeMatch.status}`}>
+              <nav className="detail-tabs" aria-label="Разделы объявления">
+                {([['overview', 'Обзор'], ['lots', `Лоты ${tenderDetails.lots.length || ''}`], ['documents', `Документы ${tenderDetails.documents.length || ''}`], ['history', 'История']] as Array<[DetailTab, string]>).map(([value, label]) => <button type="button" className={detailTab === value ? "active" : ""} onClick={() => setDetailTab(value)} key={value}>{label}</button>)}
+              </nav>
+              {detailsMessage && <p className="detail-message" role="status">{detailsMessage}</p>}
+              {detailTab === "overview" && <>{activeMatch && <section className={`match-explanation ${activeMatch.status}`}>
                 <div><span>СООТВЕТСТВИЕ ПРОФИЛЮ</span><strong>{activeMatch.label}</strong></div>
                 <ul>{activeMatch.evidence.map((item) => <li className={item.kind} key={item.label}><span aria-hidden="true">{item.kind === "positive" ? "✓" : item.kind === "negative" ? "×" : "?"}</span>{item.label}</li>)}</ul>
                 <p>Оценка основана только на известных полях объявления. Проверьте лоты, лицензии и документы на официальном портале.</p>
@@ -509,7 +553,10 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus,
                 <div><dt>Окончание приёма</dt><dd>{activeTender.endDate ? dateTime.format(activeTender.endDate) : "Не указано"}</dd></div>
                 <div><dt>Бюджет</dt><dd>{money.format(activeTender.budget)}</dd></div>
               </dl>
-              <div className="next-step"><span>ОФИЦИАЛЬНЫЙ ИСТОЧНИК</span><p>Проверьте лоты, требования и документы непосредственно на портале перед принятием решения.</p><a href={activeTender.sourceUrl} target="_blank" rel="noreferrer">Открыть на goszakup.gov.kz <span>↗</span></a></div>
+              <div className="next-step"><span>ОФИЦИАЛЬНЫЙ ИСТОЧНИК</span><p>Проверьте лоты, требования и документы непосредственно на портале перед принятием решения.</p><a href={activeTender.sourceUrl} target="_blank" rel="noreferrer">Открыть на goszakup.gov.kz <span>↗</span></a></div></>}
+              {detailTab === "lots" && <div className="detail-content">{detailsLoading ? <p>Загружаем лоты…</p> : tenderDetails.lots.length ? tenderDetails.lots.map((lot) => <article className="lot-item" key={lot.externalId}><div><small>ЛОТ № {lot.lotNumber}</small><strong>{lot.title}</strong></div><b>{money.format(lot.amount)}</b><p>{lot.description || "Описание не указано"}</p><dl><div><dt>Статус</dt><dd>{lot.statusName}</dd></div><div><dt>Количество</dt><dd>{lot.quantity || "Не указано"}</dd></div><div><dt>ЕНС ТРУ</dt><dd>{lot.enstruIds.length ? lot.enstruIds.join(", ") : "Не указано"}</dd></div><div><dt>Место поставки</dt><dd>{lot.deliveryKato.length ? lot.deliveryKato.join(", ") : "Не указано"}</dd></div></dl></article>) : <div className="detail-empty"><strong>Лоты ещё не загружены</strong><p>{sourceStatus.configured ? "Запустите загрузку официальных деталей объявления." : "После добавления API-токена здесь появятся официальные лоты, ЕНС ТРУ и места поставки."}</p>{role === "super_admin" && <button type="button" disabled={!sourceStatus.configured || syncingDetails} onClick={synchronizeDetails}>{syncingDetails ? "Загружаем…" : sourceStatus.configured ? "Загрузить детали" : "Ожидается токен"}</button>}</div>}</div>}
+              {detailTab === "documents" && <div className="detail-content">{detailsLoading ? <p>Загружаем документы…</p> : tenderDetails.documents.length ? <div className="document-list">{tenderDetails.documents.map((document) => <article key={document.externalId}><div><strong>{document.name}</strong><small>{document.originalName || `Документ лота ${document.lotId}`}</small></div>{document.url ? <a href={document.url} target="_blank" rel="noreferrer">Открыть ↗</a> : <span>Ссылка не указана</span>}</article>)}</div> : <div className="detail-empty"><strong>Документы ещё не загружены</strong><p>Файлы будут показаны только после получения их из официального API. Здесь нет демонстрационных документов.</p></div>}</div>}
+              {detailTab === "history" && <div className="detail-content">{detailsLoading ? <p>Загружаем историю…</p> : tenderDetails.changes.length ? <ol className="change-list">{tenderDetails.changes.map((change) => <li key={change.id}><span>{dateTime.format(change.changedAt)}</span><strong>{change.title}</strong></li>)}</ol> : <div className="detail-empty"><strong>История пока пуста</strong><p>После первой синхронизации здесь появятся подтверждённые события обновления.</p></div>}</div>}
             </>
           ) : (
             <div className="panel-waiting"><span>QT</span><h2>Карточка появится после загрузки</h2><p>Здесь будут только фактические сведения из официального объявления — без выдуманных оценок и рисков.</p></div>

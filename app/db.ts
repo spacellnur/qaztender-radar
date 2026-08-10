@@ -1,5 +1,5 @@
 import type { AppRole } from "./auth";
-import type { AlertFrequency, CompanyProfile, SavedSearch, TenderRecord, TenderSearchFilters, TenderSourceStatus, TenderStage, TenderWorkflowEntry } from "./tender-types";
+import type { AlertFrequency, CompanyProfile, SavedSearch, TenderDetails, TenderDocument, TenderLot, TenderRecord, TenderSearchFilters, TenderSourceStatus, TenderStage, TenderWorkflowEntry } from "./tender-types";
 
 export type DatabaseUser = { id: string; username: string; passwordHash: string; role: AppRole; isActive: number };
 
@@ -137,6 +137,49 @@ export async function deleteSavedSearch(ownerKey: string, id: string): Promise<b
   if (!binding) throw new Error("Database is unavailable");
   const result = await binding.prepare("DELETE FROM saved_searches WHERE id = ? AND owner_key = ?").bind(id, ownerKey).run();
   return Number(result.meta.changes ?? 0) > 0;
+}
+
+export async function getTenderDetails(tenderId: string): Promise<TenderDetails> {
+  const binding = db();
+  if (!binding) return { lots: [], documents: [], changes: [] };
+  const [lotsResult, documentsResult, changesResult] = await Promise.all([
+    binding.prepare(`SELECT external_id AS externalId, tender_id AS tenderId, lot_number AS lotNumber, title, description, status_name AS statusName,
+      amount, quantity, enstru_ids AS enstruIds, delivery_kato AS deliveryKato, upstream_updated_at AS upstreamUpdatedAt
+      FROM tender_lots WHERE tender_id = ? ORDER BY amount DESC, external_id`).bind(tenderId).all<Omit<TenderLot, "enstruIds" | "deliveryKato"> & { enstruIds: string; deliveryKato: string }>(),
+    binding.prepare(`SELECT external_id AS externalId, tender_id AS tenderId, lot_id AS lotId, name, original_name AS originalName, url,
+      upstream_updated_at AS upstreamUpdatedAt FROM tender_documents WHERE tender_id = ? ORDER BY name, external_id`).bind(tenderId).all<TenderDocument>(),
+    binding.prepare(`SELECT id, tender_id AS tenderId, action, title, changed_at AS changedAt FROM tender_changes
+      WHERE tender_id = ? ORDER BY changed_at DESC LIMIT 100`).bind(tenderId).all<TenderDetails["changes"][number]>(),
+  ]);
+  const lots = (lotsResult.results ?? []).map((row) => {
+    try { return { ...row, enstruIds: JSON.parse(row.enstruIds) as number[], deliveryKato: JSON.parse(row.deliveryKato) as string[] }; }
+    catch { return { ...row, enstruIds: [], deliveryKato: [] }; }
+  });
+  return { lots, documents: documentsResult.results ?? [], changes: changesResult.results ?? [] };
+}
+
+export async function tenderExists(tenderId: string): Promise<boolean> {
+  return Boolean(await db()?.prepare("SELECT 1 AS present FROM tenders WHERE external_id = ? LIMIT 1").bind(tenderId).first());
+}
+
+export async function replaceTenderDetails(tenderId: string, lots: TenderLot[], documents: TenderDocument[]): Promise<void> {
+  const binding = db();
+  if (!binding) throw new Error("Database is unavailable");
+  if (!await tenderExists(tenderId)) throw new Error("Tender not found");
+  const now = Date.now();
+  const statements = [
+    binding.prepare("DELETE FROM tender_documents WHERE tender_id = ?").bind(tenderId),
+    binding.prepare("DELETE FROM tender_lots WHERE tender_id = ?").bind(tenderId),
+    ...lots.map((lot) => binding.prepare(`INSERT INTO tender_lots (external_id, tender_id, lot_number, title, description, status_name, amount, quantity, enstru_ids, delivery_kato, upstream_updated_at, fetched_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(lot.externalId, tenderId, lot.lotNumber, lot.title, lot.description, lot.statusName, lot.amount, lot.quantity, JSON.stringify(lot.enstruIds), JSON.stringify(lot.deliveryKato), lot.upstreamUpdatedAt, now, now)),
+    ...documents.map((document) => binding.prepare(`INSERT INTO tender_documents (external_id, tender_id, lot_id, name, original_name, url, upstream_updated_at, fetched_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(document.externalId, tenderId, document.lotId, document.name, document.originalName, document.url, document.upstreamUpdatedAt, now, now)),
+    binding.prepare("INSERT INTO tender_changes (id, tender_id, action, title, changed_at) VALUES (?, ?, 'sync', ?, ?)")
+      .bind(crypto.randomUUID(), tenderId, `Синхронизировано: ${lots.length} лотов, ${documents.length} документов`, now),
+  ];
+  await binding.batch(statements);
 }
 
 export async function getTenderSourceStatus(configured: boolean): Promise<TenderSourceStatus> {

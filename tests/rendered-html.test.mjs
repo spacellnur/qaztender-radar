@@ -183,3 +183,12 @@ test("tender matching explains facts without inventing a win probability", () =>
   assert.equal(outside.status, "outside");
   assert.ok(outside.evidence.some((item) => item.kind === "negative" && /выше лимита/.test(item.label)));
 });
+
+test("tender detail endpoints are protected and validate the tender id", async () => {
+  const state = await loadWorker();
+  assert.equal((await request(state, "/api/tender-details")).status, 403);
+  assert.equal((await request(state, "/api/tender-details", { method: "POST" })).status, 403);
+  const cookie = await adminCookie(state);
+  assert.equal((await request(state, "/api/tender-details", { headers: { cookie } })).status, 400);
+  assert.equal((await request(state, "/api/tender-details", { method: "POST", headers: { cookie } })).status, 400);
+});

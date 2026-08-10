@@ -15,7 +15,8 @@ QazTender Radar must progress from a searchable announcement feed into a daily w
 - [x] (2026-08-10 15:29Z) Validated Milestone 2 locally with an inspected additive migration, successful production build, 8 passing application tests, and clean lint.
 - [x] (2026-08-10 15:39Z) Milestone 3: deployed specialist-owned profile editing and deterministic region, budget, activity, and license explanations based only on available evidence.
 - [x] (2026-08-10 15:37Z) Validated Milestone 3 locally with a successful production build, 10 passing application and matching tests, and clean lint. No schema migration was needed because the existing company profile table already stores all edited fields.
-- [ ] Milestone 4: ingest lots, ENS TRU, delivery location, documents, and change history after official API access is available.
+- [ ] Milestone 4: ingest lots, ENS TRU, delivery location, documents, and change history after official API access is available. Pre-token foundation completed locally: official schema confirmed; durable detail tables, protected read/on-demand synchronization, history capture, and honest empty-state tabs implemented. Remaining: private deployment and one real API round-trip after the token arrives.
+- [x] (2026-08-10 15:46Z) Validated the Milestone 4 pre-token foundation with an inspected additive three-table migration, successful production build, 11 passing tests, and clean lint.
 - [ ] Milestone 5: add reusable checklists, team assignments, buyer/winner analytics, and grounded document analysis.
 
 ## Surprises & Discoveries
@@ -58,6 +59,10 @@ QazTender Radar must progress from a searchable announcement feed into a daily w
   Rationale: The current announcement feed can compare a company profile with region, budget, procurement subject, and construction classification, but it does not yet contain full lot requirements or documents. The product may say which known conditions align or conflict and must mark licenses as requiring document review; it must not imply a chance of winning.
   Date/Author: 2026-08-10 / Codex
 
+- Decision: Synchronize tender details on demand before introducing a broad background detail crawler.
+  Rationale: The official `Lots` query supports filtering by announcement ID and returns up to 200 rows with nested lot files. Fetching details only when an administrator requests one known announcement avoids hundreds of speculative API calls and makes the token the final missing runtime input. A later scheduler can reuse the same normalized storage functions.
+  Date/Author: 2026-08-10 / Codex
+
 ## Outcomes & Retrospective
 
 Milestone 1 is complete and deployed. The dashboard now has account-specific tabs, favorite actions, stage badges, and a detail-panel stage selector backed by an additive D1 table and protected API. The production build, six application tests, lint, archive validation, database migration, and private production deployment all succeeded. A user can exercise the full persistence round-trip as soon as the official feed contains its first tender; no further code change is required for that scenario.
@@ -65,6 +70,8 @@ Milestone 1 is complete and deployed. The dashboard now has account-specific tab
 Milestone 2 is complete and deployed. The dashboard now exposes `Мои поиски`, captures the entire current filter state, restores it in one action, stores an honest future alert frequency, and lets the owner delete the preset. The new API derives ownership from the signed session, and the additive migration creates only `saved_searches` plus its owner/name and owner/update indexes. The production build, eight application tests, lint, archive validation, database migration, and private deployment all succeeded. Telegram/email transport remains a later connection task rather than a hidden or simulated feature.
 
 Milestone 3 is complete and deployed. Tender specialists can reopen their existing onboarding form from `Профиль компании`, edit every saved field, and return to the radar. Tender cards and the selected-tender panel use a pure evidence function to label known alignment, explicit conflicts, and missing information. Tests prove both a supported construction match and a budget conflict, and confirm that license applicability remains unknown instead of being inferred. Build, ten tests, lint, archive validation, and private deployment all succeeded.
+
+The Milestone 4 pre-token foundation is complete locally. D1 can now store normalized lots, files, and append-only synchronization history. The protected endpoint reads stored details for any signed-in account and allows only the super administrator to request one official announcement's details. The official query uses the confirmed announcement-id filter and nested files. The selected-tender panel exposes overview, lot, document, and history tabs with truthful empty states. The migration, build, eleven tests, and lint pass. Deployment and the first authenticated official API round-trip remain.
 
 ## Context and Orientation
 
@@ -89,6 +96,10 @@ Load saved searches in `app/page.tsx` and add a compact `Мои поиски` pa
 For Milestone 3, add a parsed `CompanyProfile` model in `app/tender-types.ts` and a `getCompanyProfile` query in `app/db.ts`. Reuse the existing company form for both onboarding and editing by accepting initial values and an editing mode. Add `app/profile/company/page.tsx`, protected so only a tender specialist can edit that specialist's own profile, and link it from the dashboard account area.
 
 Pass the current specialist profile into `app/TenderDashboard.tsx`. For each tender, compare only facts already available: whether the profile includes the tender region, whether the tender budget is within the declared maximum or the maximum is unlimited, and whether the procurement subject or construction classification aligns with a selected business direction. Explicit region or budget conflicts produce `Вне профиля`; two or more supported facts with no conflict produce `Подходит по известным данным`; incomplete evidence produces `Нужно проверить`. The detail panel lists each supporting fact, conflict, and unknown. Licenses are never assumed to satisfy a tender because the source documents are not yet ingested.
+
+For Milestone 4, use the official V3 GraphQL fields confirmed in August 2026. `Lots(filter: { trdBuyId: [...] })` returns lot id, number, status id and name, update date, quantity, amount, Russian name and description, announcement id, ENS TRU identifiers, delivery KATO values, system id, index date, and nested `Files`. A lot file supplies id, file path, original name, object id, Russian document name, index date, and system id. Store these values without interpreting legal requirements. Add separate `tender_lots`, `tender_documents`, and append-only `tender_changes` tables, all indexed by tender id.
+
+Add `getTenderDetails` and atomic detail-replacement helpers to `app/db.ts`. Add a protected `app/api/tender-details/route.ts`: GET reads stored detail for any signed-in account; POST is restricted to the super administrator and synchronizes one existing tender through the official API. Extend `app/goszakup.ts` with the exact lot query and normalization. Add `Обзор`, `Лоты`, `Документы`, and `История` tabs to the selected-tender panel. With no token or no stored detail, the tabs explain what is missing; they never display sample lots or invented files.
 
 Later milestones are intentionally ordered by dependency. Saved searches need the existing filter model; alerts need saved searches plus live synchronization; explainable matching needs editable company profiles and lot requirements; checklists and AI document analysis need official documents; historical analytics need enough awards and contracts to avoid misleading conclusions.
 
@@ -119,6 +130,8 @@ Automated acceptance requires a clean migration, a successful production build, 
 Milestone 2 acceptance is observable without live tenders: an authenticated user can set filters, save them under a name, change the alert frequency, reload, restore the filters, and delete the preset. Another account cannot read, edit, or delete that row because every query includes its server-derived owner key. Anonymous requests return 403, malformed names or alert frequencies return 400, and the UI never says that Telegram or email delivery is active.
 
 Milestone 3 acceptance is observable by signing in as a tender specialist, opening `Профиль компании`, changing a region or maximum budget, saving, and returning to the radar. Tender cards and the detail panel then explain changed matches using only the saved profile and official announcement fields. The super administrator cannot edit a specialist's company profile, anonymous visitors cannot use the profile API, and no label claims that a license is valid for a tender without document evidence.
+
+Milestone 4 pre-token acceptance is observable immediately: the detail card has four tabs, empty tabs state that official detail is not yet loaded, anonymous detail requests are rejected, and non-administrators cannot start a detail synchronization. After the token exists and at least one announcement is stored, the administrator can request its details; the official lot count, amounts, ENS TRU identifiers, delivery KATO values, file names and links appear, and an append-only synchronization event appears in history. Repeating the operation safely replaces the current snapshot while preserving history.
 
 ## Idempotence and Recovery
 
@@ -168,3 +181,7 @@ Revision note (2026-08-10 15:36Z): Started Milestone 3. Defined editable special
 Revision note (2026-08-10 15:37Z): Recorded the completed local Milestone 3 implementation, the reuse of the existing profile schema, and successful build, ten-test, and lint evidence. Deployment is the remaining checkpoint.
 
 Revision note (2026-08-10 15:39Z): Closed Milestone 3 after successful private deployment. The remaining roadmap now consists of official lot/document ingestion and later team/analytics/document-assistance work.
+
+Revision note (2026-08-10 15:43Z): Started Milestone 4 after checking the current official V3 GraphQL schema. Defined normalized detail storage, on-demand administrator synchronization, protected reads, history semantics, and truthful pre-token UI.
+
+Revision note (2026-08-10 15:46Z): Recorded the complete pre-token implementation, inspected three-table migration, official query wiring, and successful build, eleven-test, and lint evidence. Deployment and the first real token-backed request remain.

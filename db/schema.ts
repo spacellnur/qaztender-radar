@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -83,6 +83,42 @@ export const savedSearches = sqliteTable("saved_searches", {
   uniqueIndex("idx_saved_searches_owner_name").on(table.ownerKey, table.name),
   index("idx_saved_searches_owner_updated_at").on(table.ownerKey, table.updatedAt),
 ]);
+
+export const tenderLots = sqliteTable("tender_lots", {
+  externalId: text("external_id").primaryKey(),
+  tenderId: text("tender_id").notNull().references(() => tenders.externalId, { onDelete: "cascade" }),
+  lotNumber: text("lot_number").notNull(),
+  title: text("title").notNull(),
+  description: text("description").notNull().default(""),
+  statusName: text("status_name").notNull().default("Не указан"),
+  amount: real("amount").notNull().default(0),
+  quantity: real("quantity").notNull().default(0),
+  enstruIds: text("enstru_ids").notNull().default("[]"),
+  deliveryKato: text("delivery_kato").notNull().default("[]"),
+  upstreamUpdatedAt: text("upstream_updated_at").notNull().default(""),
+  fetchedAt: integer("fetched_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+}, (table) => [index("idx_tender_lots_tender_id").on(table.tenderId)]);
+
+export const tenderDocuments = sqliteTable("tender_documents", {
+  externalId: text("external_id").primaryKey(),
+  tenderId: text("tender_id").notNull().references(() => tenders.externalId, { onDelete: "cascade" }),
+  lotId: text("lot_id").notNull().default(""),
+  name: text("name").notNull(),
+  originalName: text("original_name").notNull().default(""),
+  url: text("url").notNull().default(""),
+  upstreamUpdatedAt: text("upstream_updated_at").notNull().default(""),
+  fetchedAt: integer("fetched_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+}, (table) => [index("idx_tender_documents_tender_id").on(table.tenderId)]);
+
+export const tenderChanges = sqliteTable("tender_changes", {
+  id: text("id").primaryKey(),
+  tenderId: text("tender_id").notNull().references(() => tenders.externalId, { onDelete: "cascade" }),
+  action: text("action", { enum: ["sync", "update", "delete"] }).notNull(),
+  title: text("title").notNull(),
+  changedAt: integer("changed_at").notNull(),
+}, (table) => [index("idx_tender_changes_tender_changed_at").on(table.tenderId, table.changedAt)]);
 
 export const tenderSyncRuns = sqliteTable("tender_sync_runs", {
   id: text("id").primaryKey(),
