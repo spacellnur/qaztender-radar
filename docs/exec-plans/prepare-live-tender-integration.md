@@ -14,7 +14,7 @@ QazTender Radar must stop presenting demonstration tenders and become ready for 
 - [x] (2026-08-10 11:26Z) Replaced demonstration records with database-backed tenders and clear waiting, ready-to-sync, ready, and error states.
 - [x] (2026-08-10 11:26Z) Added filters for text, every Kazakhstan region, subject, budget, construction work, and deadline while preserving responsive behavior.
 - [x] (2026-08-10 11:26Z) Extended tests for the token-missing state and synchronization authorization; lint, production build, and all four worker tests pass.
-- [ ] Publish the validated private site and record the outcome.
+- [x] (2026-08-10 11:30Z) Published the validated migration-backed dashboard as private Sites version 5 and confirmed the production deployment succeeded.
 
 ## Surprises & Discoveries
 
@@ -47,7 +47,7 @@ QazTender Radar must stop presenting demonstration tenders and become ready for 
 
 ## Outcomes & Retrospective
 
-The implementation is complete and locally validated. The dashboard now contains no demonstration procurement claims, displays a truthful waiting state, offers useful filters before data arrives, and stores future official records durably. The server-only client uses the documented GraphQL V3 schema and Bearer authorization; the token is the sole missing configuration. Four worker tests pass, lint reports no errors, and the production build succeeds. Private publication remains as the final milestone.
+The implementation is complete, validated, and privately published at `https://qaztender-radar-demo.carmarew.chatgpt.site`. The dashboard now contains no demonstration procurement claims, displays a truthful waiting state, offers useful filters before data arrives, and stores future official records durably. The server-only client uses the documented GraphQL V3 schema and Bearer authorization; the token is the sole missing configuration. Four worker tests pass, lint reports no errors, and the production build succeeds. The existing administrator credentials, session secret, D1 data, and private owner-only access were preserved.
 
 ## Context and Orientation
 
@@ -90,3 +90,5 @@ The official V3 endpoint is `https://ows.goszakup.gov.kz/v3/graphql`. Requests u
 Revision note (2026-08-10): Created the self-contained implementation plan after inspecting the existing authenticated dashboard, D1 architecture, Sites rules, and official Goszakup V3 schema. The plan makes the token the final missing configuration rather than a prerequisite for product work.
 
 Revision note (2026-08-10 11:26Z): Recorded the completed D1 schema, migration, official V3 adapter, protected synchronization endpoints, factual dashboard, filters, removal of the overlapping demo fallback, and successful lint/build/test evidence. Publication remains.
+
+Revision note (2026-08-10 11:30Z): Recorded the successful private production deployment and confirmed that the only remaining operational input is the server-side API token.
