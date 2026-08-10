@@ -15,7 +15,7 @@ QazTender Radar must progress from a searchable announcement feed into a daily w
 - [x] (2026-08-10 15:29Z) Validated Milestone 2 locally with an inspected additive migration, successful production build, 8 passing application tests, and clean lint.
 - [x] (2026-08-10 15:39Z) Milestone 3: deployed specialist-owned profile editing and deterministic region, budget, activity, and license explanations based only on available evidence.
 - [x] (2026-08-10 15:37Z) Validated Milestone 3 locally with a successful production build, 10 passing application and matching tests, and clean lint. No schema migration was needed because the existing company profile table already stores all edited fields.
-- [ ] Milestone 4: ingest lots, ENS TRU, delivery location, documents, and change history after official API access is available. Pre-token foundation completed locally: official schema confirmed; durable detail tables, protected read/on-demand synchronization, history capture, and honest empty-state tabs implemented. Remaining: private deployment and one real API round-trip after the token arrives.
+- [ ] Milestone 4: ingest lots, ENS TRU, delivery location, documents, and change history after official API access is available. Pre-token foundation deployed: official schema confirmed; durable detail tables, protected read/on-demand synchronization, history capture, and honest empty-state tabs are live. Remaining: one real API round-trip after the token arrives.
 - [x] (2026-08-10 15:46Z) Validated the Milestone 4 pre-token foundation with an inspected additive three-table migration, successful production build, 11 passing tests, and clean lint.
 - [ ] Milestone 5: add reusable checklists, team assignments, buyer/winner analytics, and grounded document analysis.
 
@@ -71,7 +71,7 @@ Milestone 2 is complete and deployed. The dashboard now exposes `Мои поис
 
 Milestone 3 is complete and deployed. Tender specialists can reopen their existing onboarding form from `Профиль компании`, edit every saved field, and return to the radar. Tender cards and the selected-tender panel use a pure evidence function to label known alignment, explicit conflicts, and missing information. Tests prove both a supported construction match and a budget conflict, and confirm that license applicability remains unknown instead of being inferred. Build, ten tests, lint, archive validation, and private deployment all succeeded.
 
-The Milestone 4 pre-token foundation is complete locally. D1 can now store normalized lots, files, and append-only synchronization history. The protected endpoint reads stored details for any signed-in account and allows only the super administrator to request one official announcement's details. The official query uses the confirmed announcement-id filter and nested files. The selected-tender panel exposes overview, lot, document, and history tabs with truthful empty states. The migration, build, eleven tests, and lint pass. Deployment and the first authenticated official API round-trip remain.
+The Milestone 4 pre-token foundation is deployed. D1 can now store normalized lots, files, and append-only synchronization history. The protected endpoint reads stored details for any signed-in account and allows only the super administrator to request one official announcement's details. The official query uses the confirmed announcement-id filter and nested files. The selected-tender panel exposes overview, lot, document, and history tabs with truthful empty states. The migration, build, eleven tests, lint, archive validation, database migration, and private deployment succeeded. Only the first authenticated official API round-trip remains.
 
 ## Context and Orientation
 
@@ -185,3 +185,5 @@ Revision note (2026-08-10 15:39Z): Closed Milestone 3 after successful private d
 Revision note (2026-08-10 15:43Z): Started Milestone 4 after checking the current official V3 GraphQL schema. Defined normalized detail storage, on-demand administrator synchronization, protected reads, history semantics, and truthful pre-token UI.
 
 Revision note (2026-08-10 15:46Z): Recorded the complete pre-token implementation, inspected three-table migration, official query wiring, and successful build, eleven-test, and lint evidence. Deployment and the first real token-backed request remain.
+
+Revision note (2026-08-10 15:48Z): Deployed the Milestone 4 pre-token foundation. The token-backed round-trip is now the only open acceptance item for this milestone.
