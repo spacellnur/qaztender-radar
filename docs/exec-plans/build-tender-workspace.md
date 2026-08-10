@@ -10,7 +10,7 @@ QazTender Radar must progress from a searchable announcement feed into a daily w
 
 - [x] (2026-08-10 15:11Z) Reviewed the competitor analysis, durable project memory, authentication model, D1 access layer, current tender dashboard, migration tooling, tests, and Sites deployment requirements.
 - [x] (2026-08-10 15:16Z) Milestone 1: persisted favorites and participation stages per signed-in account, exposed a protected API, and integrated workspace tabs and actions into the dashboard.
-- [ ] Validate Milestone 1 with a generated migration, production build, application tests, lint, and a private Sites deployment. Completed: additive migration inspected, production build passed, 6 application tests passed, and lint passed. Remaining: private Sites deployment and live persistence check.
+- [x] (2026-08-10 15:19Z) Validated Milestone 1 with an inspected additive migration, successful production build, 6 passing application tests, clean lint, and successful private Sites deployment. A real-tender click-through remains unavailable only because the official feed still awaits its API token.
 - [ ] Milestone 2: add named saved searches and notification preferences, followed by Telegram/email delivery once a real feed can trigger them.
 - [ ] Milestone 3: make company profiles editable and add explainable tender-to-company matching based only on available evidence.
 - [ ] Milestone 4: ingest lots, ENS TRU, delivery location, documents, and change history after official API access is available.
@@ -50,7 +50,7 @@ QazTender Radar must progress from a searchable announcement feed into a daily w
 
 ## Outcomes & Retrospective
 
-Milestone 1 implementation is complete locally. The dashboard now has account-specific tabs, favorite actions, stage badges, and a detail-panel stage selector backed by an additive D1 table and protected API. The production build, six application tests, and lint all pass. Private deployment and a live D1 round-trip remain before the milestone is closed.
+Milestone 1 is complete and deployed. The dashboard now has account-specific tabs, favorite actions, stage badges, and a detail-panel stage selector backed by an additive D1 table and protected API. The production build, six application tests, lint, archive validation, database migration, and private production deployment all succeeded. A user can exercise the full persistence round-trip as soon as the official feed contains its first tender; no further code change is required for that scenario.
 
 ## Context and Orientation
 
@@ -128,3 +128,5 @@ It returns the saved entry, or `null` after deletion. It derives ownership from 
 Revision note (2026-08-10 15:11Z): Created the long-lived implementation plan from the competitor analysis and repository inspection. Defined the full product sequence and made favorites plus participation stages the first independently testable milestone.
 
 Revision note (2026-08-10 15:16Z): Recorded the completed local implementation, the independent favorite/stage correction, the generated migration, and successful build, test, and lint evidence. Deployment remains the only unfinished part of Milestone 1.
+
+Revision note (2026-08-10 15:19Z): Closed Milestone 1 after successful private production deployment. Noted that the only deferred manual scenario requires a real tender from the still-pending official API feed.
