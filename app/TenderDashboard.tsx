@@ -218,7 +218,7 @@ export default function TenderDashboard({ username, role, tenders, sourceStatus 
     <main className="app-shell">
       <header className="topbar">
         <a className="brand" href="#top" aria-label="QazTender Radar — на главную">
-          <span className="brand-mark">QT</span>
+          <span className="brand-mark radar-logo-mark" aria-hidden="true"><span className="radar-sweep" /></span>
           <span><strong>QazTender</strong><small>RADAR</small></span>
         </a>
         <div className="topbar-actions">

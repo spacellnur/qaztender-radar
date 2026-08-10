@@ -24,7 +24,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .app-shell { min-height: 100vh; }
 .topbar { height: 76px; padding: 0 clamp(22px, 4vw, 64px); display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: rgba(243,241,233,.92); position: sticky; top: 0; z-index: 20; backdrop-filter: blur(14px); }
 .brand { display: flex; align-items: center; gap: 11px; color: var(--ink); text-decoration: none; }
-.brand-mark { display: grid; place-items: center; width: 39px; height: 39px; background: var(--ink); color: var(--lime); font-weight: 900; letter-spacing: -1px; border-radius: 4px 12px 4px 4px; }
+.brand-mark { width: 42px; height: 42px; }
+.radar-logo-mark { position: relative; display: block; flex: 0 0 auto; background: var(--ink); border-radius: 11px; overflow: hidden; }
+.radar-logo-mark::before { content: ""; position: absolute; inset: 20%; border: 4px solid var(--lime); border-radius: 50%; }
+.radar-logo-mark::after { content: ""; position: absolute; width: 27%; height: 4px; right: 12%; bottom: 18%; border-radius: 99px; background: var(--lime); transform: rotate(45deg); transform-origin: center; }
+.radar-sweep { position: absolute; width: 27%; height: 3px; left: 47%; top: 48%; border-radius: 99px; background: var(--paper); transform: rotate(-42deg); transform-origin: left center; }
+.radar-sweep::after { content: ""; position: absolute; width: 6px; height: 6px; left: -3px; top: -1.5px; border-radius: 50%; background: var(--paper); }
 .brand > span:last-child { display: grid; line-height: 1; }
 .brand strong { font-size: 18px; letter-spacing: -.5px; }
 .brand small { font-size: 9px; letter-spacing: 3.5px; color: var(--muted); margin-top: 5px; }
@@ -84,8 +89,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 
 .login-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 15% 10%, #f4f1e8 0, transparent 38%), #e8ebe5; }
 .login-card { width: min(100%, 430px); background: #fff; border: 1px solid var(--line); border-radius: 22px; padding: 38px; box-shadow: 0 24px 70px rgba(28, 34, 27, .12); }
-.login-brand { display: flex; align-items: center; gap: 10px; font-weight: 850; }
-.login-brand span { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; background: var(--ink); color: #fff; font-size: 12px; }
+.login-brand { display: flex; align-items: center; gap: 11px; font-weight: 850; }
+.login-brand > .radar-logo-mark { width: 42px; height: 42px; }
+.login-brand-copy { display: grid; line-height: 1; }
+.login-brand-copy strong { font-size: 18px; letter-spacing: -.5px; }
+.login-brand-copy small { margin-top: 5px; color: var(--muted); font-size: 9px; letter-spacing: 3.5px; }
 .login-eyebrow { margin: 32px 0 8px; color: var(--accent-dark); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .login-card h1 { margin: 0; font-size: clamp(30px, 7vw, 42px); letter-spacing: -.04em; }
 .login-intro { color: var(--muted); line-height: 1.55; }
