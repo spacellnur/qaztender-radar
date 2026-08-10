@@ -12,6 +12,7 @@ type RuntimeEnv = {
   ADMIN_USERNAME?: string;
   ADMIN_PASSWORD_HASH?: string;
   SESSION_SECRET?: string;
+  GOSZAKUP_API_TOKEN?: string;
 };
 
 declare global {

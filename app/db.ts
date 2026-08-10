@@ -1,4 +1,5 @@
 import type { AppRole } from "./auth";
+import type { TenderRecord, TenderSourceStatus } from "./tender-types";
 
 export type DatabaseUser = { id: string; username: string; passwordHash: string; role: AppRole; isActive: number };
 
@@ -37,4 +38,94 @@ export async function saveCompanyProfile(userId: string, profile: Record<string,
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(user_id) DO UPDATE SET company_name=excluded.company_name, bin=excluded.bin, regions=excluded.regions, work_categories=excluded.work_categories, licenses=excluded.licenses, experience_years=excluded.experience_years, employee_count=excluded.employee_count, min_budget=excluded.min_budget, max_budget=excluded.max_budget, updated_at=excluded.updated_at`)
     .bind(crypto.randomUUID(), userId, profile.companyName, profile.bin, profile.regions, profile.workCategories, profile.licenses, profile.experienceYears, profile.employeeCount, profile.minBudget, profile.maxBudget, now, now).run();
+}
+
+export async function listTenders(limit = 500): Promise<TenderRecord[]> {
+  const binding = db();
+  if (!binding) return [];
+  const result = await binding.prepare(`SELECT
+      external_id AS externalId, number_anno AS numberAnno, title, buyer,
+      customer_bin AS customerBin, region_code AS regionCode, region_name AS regionName,
+      subject_type_id AS subjectTypeId, subject_type AS subjectType,
+      method_id AS methodId, method_name AS methodName, budget,
+      start_date AS startDate, end_date AS endDate, publish_date AS publishDate,
+      is_construction_work AS isConstructionWork, status_id AS statusId,
+      status_name AS statusName, kato, system_id AS systemId, source_url AS sourceUrl,
+      upstream_updated_at AS upstreamUpdatedAt, fetched_at AS fetchedAt, updated_at AS updatedAt
+    FROM tenders
+    ORDER BY CASE WHEN end_date IS NULL THEN 1 ELSE 0 END, end_date ASC, budget DESC
+    LIMIT ?`).bind(Math.min(Math.max(limit, 1), 1000)).all<TenderRecord>();
+  return (result.results ?? []).map((row) => ({ ...row, isConstructionWork: Boolean(row.isConstructionWork) }));
+}
+
+export async function getTenderSourceStatus(configured: boolean): Promise<TenderSourceStatus> {
+  const binding = db();
+  if (!binding) {
+    return { configured, recordCount: 0, state: configured ? "ready_to_sync" : "waiting_token", lastSyncAt: null, lastSyncStatus: null, lastError: "" };
+  }
+  const count = await binding.prepare("SELECT COUNT(*) AS count FROM tenders").first<{ count: number }>();
+  const run = await binding.prepare(`SELECT status, finished_at AS finishedAt, started_at AS startedAt, error_message AS errorMessage
+    FROM tender_sync_runs WHERE status IN ('succeeded', 'failed') ORDER BY started_at DESC LIMIT 1`)
+    .first<{ status: "succeeded" | "failed"; finishedAt: number | null; startedAt: number; errorMessage: string }>();
+  const recordCount = Number(count?.count ?? 0);
+  const state = run?.status === "failed" && recordCount === 0 ? "error" : recordCount > 0 ? "ready" : configured ? "ready_to_sync" : "waiting_token";
+  return {
+    configured,
+    recordCount,
+    state,
+    lastSyncAt: run ? (run.finishedAt ?? run.startedAt) : null,
+    lastSyncStatus: run?.status ?? null,
+    lastError: run?.errorMessage ?? "",
+  };
+}
+
+export async function startTenderSyncRun(): Promise<string> {
+  const binding = db();
+  if (!binding) throw new Error("Database is unavailable");
+  const id = crypto.randomUUID();
+  await binding.prepare("INSERT INTO tender_sync_runs (id, status, started_at, fetched_count, saved_count, error_message) VALUES (?, 'running', ?, 0, 0, '')")
+    .bind(id, Date.now()).run();
+  return id;
+}
+
+export async function finishTenderSyncRun(id: string, status: "succeeded" | "failed", fetchedCount: number, savedCount: number, errorMessage = "") {
+  const binding = db();
+  if (!binding) throw new Error("Database is unavailable");
+  await binding.prepare("UPDATE tender_sync_runs SET status = ?, finished_at = ?, fetched_count = ?, saved_count = ?, error_message = ? WHERE id = ?")
+    .bind(status, Date.now(), fetchedCount, savedCount, errorMessage.slice(0, 500), id).run();
+}
+
+export async function upsertTenders(records: TenderRecord[]): Promise<number> {
+  const binding = db();
+  if (!binding) throw new Error("Database is unavailable");
+  if (records.length === 0) return 0;
+  const sql = `INSERT INTO tenders (
+      external_id, number_anno, title, buyer, customer_bin, region_code, region_name,
+      subject_type_id, subject_type, method_id, method_name, budget, start_date, end_date,
+      publish_date, is_construction_work, status_id, status_name, kato, system_id, source_url,
+      upstream_updated_at, fetched_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(external_id) DO UPDATE SET
+      number_anno=excluded.number_anno, title=excluded.title, buyer=excluded.buyer,
+      customer_bin=excluded.customer_bin, region_code=excluded.region_code, region_name=excluded.region_name,
+      subject_type_id=excluded.subject_type_id, subject_type=excluded.subject_type,
+      method_id=excluded.method_id, method_name=excluded.method_name, budget=excluded.budget,
+      start_date=excluded.start_date, end_date=excluded.end_date, publish_date=excluded.publish_date,
+      is_construction_work=excluded.is_construction_work, status_id=excluded.status_id,
+      status_name=excluded.status_name, kato=excluded.kato, system_id=excluded.system_id,
+      source_url=excluded.source_url, upstream_updated_at=excluded.upstream_updated_at,
+      fetched_at=excluded.fetched_at, updated_at=excluded.updated_at`;
+
+  for (let offset = 0; offset < records.length; offset += 60) {
+    const statements = records.slice(offset, offset + 60).map((record) => binding.prepare(sql).bind(
+      record.externalId, record.numberAnno, record.title, record.buyer, record.customerBin,
+      record.regionCode, record.regionName, record.subjectTypeId, record.subjectType,
+      record.methodId, record.methodName, record.budget, record.startDate, record.endDate,
+      record.publishDate, record.isConstructionWork ? 1 : 0, record.statusId, record.statusName,
+      record.kato, record.systemId, record.sourceUrl, record.upstreamUpdatedAt,
+      record.fetchedAt, record.updatedAt,
+    ));
+    await binding.batch(statements);
+  }
+  return records.length;
 }

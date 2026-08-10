@@ -8,6 +8,13 @@
       "when": 1786313733648,
       "tag": "0000_naive_manta",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786361043960,
+      "tag": "0001_fluffy_joseph",
+      "breakpoints": true
     }
   ]
 }

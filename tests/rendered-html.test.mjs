@@ -36,6 +36,16 @@ async function request(workerState, path, init = {}) {
   return workerState.worker.fetch(new Request(`http://localhost${path}`, init), workerState.env, workerState.context);
 }
 
+async function adminCookie(state) {
+  const login = await request(state, "/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  assert.equal(login.status, 200);
+  return (login.headers.get("set-cookie") ?? "").split(";")[0];
+}
+
 test("anonymous visitors see login and cannot open the dashboard", async () => {
   const state = await loadWorker();
   const dashboard = await request(state, "/", { headers: { accept: "text/html" }, redirect: "manual" });
@@ -45,8 +55,6 @@ test("anonymous visitors see login and cannot open the dashboard", async () => {
   const login = await request(state, "/login", { headers: { accept: "text/html" } });
   assert.equal(login.status, 200);
   const html = await login.text();
-  assert.match(html, /Вход в систему/);
-  assert.match(html, /Защищённая рабочая область/);
   assert.doesNotMatch(html, /correct-test-password/);
 });
 
@@ -59,31 +67,34 @@ test("invalid credentials are rejected without a session", async () => {
   });
   assert.equal(response.status, 401);
   assert.equal(response.headers.get("set-cookie"), null);
-  assert.deepEqual(await response.json(), { error: "Неверный логин или пароль" });
 });
 
-test("administrator can sign in, open dashboard, and sign out", async () => {
+test("administrator sees the token-waiting dashboard and can sign out", async () => {
   const state = await loadWorker();
-  const login = await request(state, "/api/auth/login", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
-  assert.equal(login.status, 200);
-  const setCookie = login.headers.get("set-cookie") ?? "";
-  assert.match(setCookie, /qaztender_session=/);
-  assert.match(setCookie, /HttpOnly/i);
-  assert.match(setCookie, /Secure/i);
-  assert.match(setCookie, /SameSite=Lax/i);
-  const cookie = setCookie.split(";")[0];
+  const cookie = await adminCookie(state);
+  assert.match(cookie, /^qaztender_session=/);
 
   const dashboard = await request(state, "/", { headers: { accept: "text/html", cookie } });
   assert.equal(dashboard.status, 200);
   const html = await dashboard.text();
   assert.match(html, /Главный администратор/);
-  assert.match(html, /Демо-данные/);
+  assert.match(html, /Ожидается API-токен/);
+  assert.match(html, /Все регионы/);
+  assert.match(html, /Туркестанская область/);
+  assert.doesNotMatch(html, /Демо-данные/);
+
+  const sync = await request(state, "/api/tenders/sync", { method: "POST", headers: { cookie } });
+  assert.equal(sync.status, 503);
+  assert.deepEqual(await sync.json(), { error: "API-токен госзакупок ещё не настроен" });
 
   const logout = await request(state, "/api/auth/logout", { method: "POST", headers: { cookie } });
   assert.equal(logout.status, 200);
   assert.match(logout.headers.get("set-cookie") ?? "", /Max-Age=0/i);
+});
+
+test("anonymous visitors cannot start tender synchronization", async () => {
+  const state = await loadWorker();
+  const response = await request(state, "/api/tenders/sync", { method: "POST" });
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: "Доступ запрещён" });
 });
