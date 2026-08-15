@@ -8,9 +8,14 @@ import {
   listTenderWorkflow, recordTelegramDelivery, rewardReferrer, saveTelegramFilter,
   saveTenderWorkflow, seedTenderTaskTemplate, touchTelegramSubscriberActivity,
   updateTelegramSubscriberStatus, updateTenderTask, verifyTelegramWebLoginCode,
-  verifyTelegramWebLoginToken
 } from "./db";
-import { localities } from "./localities";
+import {
+  REGIONS,
+  getLocalityLabel,
+  getRegionById,
+  localities,
+  matchesTenderLocation
+} from "./localities";
 import { explainTenderMatch } from "./tender-matching";
 import type { CompanyProfile, TelegramSubscriber, TenderRecord, TenderStage } from "./tender-types";
 
@@ -896,16 +901,11 @@ export async function handleTelegramUpdate(update: {
       const currentFilter = await getTelegramFilter(String(chatId));
       const tenders = await listTenders(500);
       const now = Date.now();
-      const loc = localities.find((l) => l.value === currentFilter.locality);
       const cat = INDUSTRY_CATEGORIES.find((c) => c.id === currentFilter.category);
 
       const matched = tenders
         .filter((t) => !t.endDate || t.endDate > now)
-        .filter((t) => {
-          if (!loc || !loc.keywords || loc.keywords.length === 0) return true;
-          const textToSearch = `${t.title} ${t.buyer} ${t.regionName} ${t.kato}`.toLowerCase();
-          return loc.keywords.some((k) => textToSearch.includes(k));
-        })
+        .filter((t) => matchesTenderLocation(currentFilter.locality, t))
         .filter((t) => {
           if (!cat || !cat.keywords || cat.keywords.length === 0) return true;
           if (cat.id === "construction" && t.isConstructionWork) return true;
@@ -931,6 +931,7 @@ export async function handleTelegramUpdate(update: {
       for (const tender of displayTenders) {
         const card = formatTenderTelegramCard(tender);
         await sendTelegramMessage(chatId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
+      }
       return { ok: true };
     }
 
@@ -1172,19 +1173,50 @@ export async function handleTelegramUpdate(update: {
       return { ok: true };
     }
 
-    // Choose locality menu
+    // Choose locality menu - Step 1: Regions of Kazakhstan
     if (data === "menu_locality") {
       await answerCallbackQuery(query.id);
-      const localityButtons = [
-        [{ text: "🎯 Туркестан и окрестные сёла", callback_data: "set_loc:turkestan_cluster" }],
-        [{ text: "🏢 г. Туркестан (город)", callback_data: "set_loc:turkestan_city" }, { text: "⛏ г. Кентау", callback_data: "set_loc:kentau" }],
-        [{ text: "🌾 Отырар / Шаулдер", callback_data: "set_loc:otyrar" }, { text: "🍇 Сарыагашский р-н", callback_data: "set_loc:saryagash" }],
-        [{ text: "🏙 г. Шымкент", callback_data: "set_loc:shymkent" }, { text: "🏔 г. Алматы", callback_data: "set_loc:almaty" }],
-        [{ text: "🏛 г. Астана", callback_data: "set_loc:astana" }, { text: "🌐 Весь Казахстан", callback_data: "set_loc:all" }],
-        [{ text: "⬅️ Назад в настройки", callback_data: "open_filter_menu" }],
+      const regionButtons: Array<Array<{ text: string; callback_data: string }>> = [
+        [{ text: "🌐 Весь Казахстан (все 20 регионов)", callback_data: "set_loc:all" }],
       ];
-      await sendTelegramMessage(fromId, `📍 <b>ВЫБЕРИТЕ ВАШ ГОРОД ИЛИ РАЙОН:</b>\n━━━━━━━━━━━━━━━━━━━━\nБот будет показывать и присылать закупки только из выбранного населённого пункта.`, {
-        reply_markup: { inline_keyboard: localityButtons },
+      for (let i = 0; i < REGIONS.length; i += 2) {
+        const row = [];
+        const r1 = REGIONS[i];
+        row.push({ text: `${r1.icon} ${r1.name}`, callback_data: `select_region:${r1.id}` });
+        if (i + 1 < REGIONS.length) {
+          const r2 = REGIONS[i + 1];
+          row.push({ text: `${r2.icon} ${r2.name}`, callback_data: `select_region:${r2.id}` });
+        }
+        regionButtons.push(row);
+      }
+      regionButtons.push([{ text: "⬅️ Назад в настройки", callback_data: "open_filter_menu" }]);
+
+      await sendTelegramMessage(fromId, `📍 <b>ШАГ 1 ИЗ 2: ВЫБЕРИТЕ ОБЛАСТЬ ИЛИ ГОРОД:</b>\n━━━━━━━━━━━━━━━━━━━━\nВыберите область, чтобы увидеть список районов, городов и сёл:`, {
+        reply_markup: { inline_keyboard: regionButtons },
+      });
+      return { ok: true };
+    }
+
+    // Step 2: Select sub-locality / district / city in the region
+    if (data.startsWith("select_region:")) {
+      const regionId = data.slice(14);
+      const region = getRegionById(regionId);
+      if (!region) {
+        await answerCallbackQuery(query.id, "Область не найдена");
+        return { ok: true };
+      }
+      await answerCallbackQuery(query.id);
+      const subButtons: Array<Array<{ text: string; callback_data: string }>> = [];
+      for (const item of region.items) {
+        subButtons.push([{ text: item.label, callback_data: `set_loc:${item.value}` }]);
+      }
+      subButtons.push([
+        { text: "⬅️ Назад к списку областей", callback_data: "menu_locality" },
+        { text: "⚙️ В меню фильтра", callback_data: "open_filter_menu" },
+      ]);
+
+      await sendTelegramMessage(fromId, `📍 <b>ШАГ 2 ИЗ 2: ${region.name.toUpperCase()}</b>\n━━━━━━━━━━━━━━━━━━━━\nВыберите нужный город, район, кластер сёл либо всю область целиком:`, {
+        reply_markup: { inline_keyboard: subButtons },
       });
       return { ok: true };
     }
@@ -1194,7 +1226,7 @@ export async function handleTelegramUpdate(update: {
       const locVal = data.slice(8);
       await saveTelegramFilter({ chatId: fromId, locality: locVal });
       const label = getLocalityLabel(locVal);
-      await answerCallbackQuery(query.id, `✅ Город изменён: ${label}`, true);
+      await answerCallbackQuery(query.id, `✅ Выбрано: ${label}`, true);
       await sendFilterSettingsMessage(fromId);
       return { ok: true };
     }
@@ -1442,16 +1474,11 @@ export async function handleTelegramUpdate(update: {
       const currentFilter = await getTelegramFilter(fromId);
       const tenders = await listTenders(500);
       const now = Date.now();
-      const loc = localities.find((l) => l.value === currentFilter.locality);
       const cat = INDUSTRY_CATEGORIES.find((c) => c.id === currentFilter.category);
 
       let matched = tenders
         .filter((t) => !t.endDate || t.endDate > now)
-        .filter((t) => {
-          if (!loc || !loc.keywords || loc.keywords.length === 0) return true;
-          const textToSearch = `${t.title} ${t.buyer} ${t.regionName} ${t.kato}`.toLowerCase();
-          return loc.keywords.some((k) => textToSearch.includes(k));
-        })
+        .filter((t) => matchesTenderLocation(currentFilter.locality, t))
         .filter((t) => {
           if (!cat || !cat.keywords || cat.keywords.length === 0) return true;
           if (cat.id === "construction" && t.isConstructionWork) return true;
@@ -1461,24 +1488,22 @@ export async function handleTelegramUpdate(update: {
         .filter((t) => !currentFilter.maxBudget || t.budget <= currentFilter.maxBudget)
         .slice(0, 3);
 
+      let headerNote = "";
       if (matched.length === 0) {
         matched = tenders.filter((t) => !t.endDate || t.endDate > now).slice(0, 3);
-      }
-      if (matched.length === 0) {
-        matched = tenders.slice(0, 3);
+        if (matched.length === 0) {
+          matched = tenders.slice(0, 3);
+        }
+        headerNote = `\n<i>(По вашему точному фильтру лотов сейчас нет, показываем ближайшие актуальные тендеры)</i>`;
       }
 
       const locLabel = getLocalityLabel(currentFilter.locality);
       const catLabel = getCategoryLabel(currentFilter.category);
 
-      if (matched.length === 0) {
-        await sendTelegramMessage(fromId, `ℹ️ На данный момент нет активных объявлений. Скоро появятся новые лоты!`);
-      } else {
-        await sendTelegramMessage(fromId, `🎯 <b>ВАШИ ПОДХОДЯЩИЕ ТЕНДЕРЫ\n(${locLabel} • ${catLabel}):</b>\n━━━━━━━━━━━━━━━━━━━━`);
-        for (const tender of matched) {
-          const card = formatTenderTelegramCard(tender);
-          await sendTelegramMessage(fromId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
-        }
+      await sendTelegramMessage(fromId, `🎯 <b>ВАШИ ПОДХОДЯЩИЕ ТЕНДЕРЫ\n(${locLabel} • ${catLabel}):</b>${headerNote}\n━━━━━━━━━━━━━━━━━━━━`);
+      for (const tender of matched) {
+        const card = formatTenderTelegramCard(tender);
+        await sendTelegramMessage(fromId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
       }
       return { ok: true };
     }
