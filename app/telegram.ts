@@ -295,20 +295,46 @@ export async function answerCallbackQuery(callbackQueryId: string, text?: string
   }
 }
 
-export async function editMessageReplyMarkup(chatId: string | number, messageId: number, replyMarkup?: {
-  inline_keyboard: Array<Array<{ text: string; url?: string; callback_data?: string }>>;
-}): Promise<boolean> {
+export async function editTelegramMessageText(
+  chatId: string | number,
+  messageId: number,
+  text: string,
+  options?: {
+    reply_markup?: {
+      inline_keyboard?: Array<Array<{ text: string; url?: string; callback_data?: string }>>;
+    };
+    parse_mode?: "HTML" | "MarkdownV2" | "Markdown";
+  }
+): Promise<boolean> {
   const token = getBotToken();
   if (!token) return false;
   try {
-    await fetch(`https://api.telegram.org/bot${token}/editMessageReplyMarkup`, {
+    await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: chatId,
         message_id: messageId,
-        reply_markup: replyMarkup ?? { inline_keyboard: [] },
+        text,
+        parse_mode: options?.parse_mode ?? "HTML",
+        disable_web_page_preview: true,
+        reply_markup: options?.reply_markup ?? { inline_keyboard: [] },
       }),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteTelegramMessage(chatId: string | number, messageId: number): Promise<boolean> {
+  const token = getBotToken();
+  if (!token) return false;
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
     });
     return true;
   } catch {
@@ -326,6 +352,37 @@ export const STAGE_LABELS: Record<string, string> = {
   won: "🏆 Победили",
   lost: "❌ Проиграли",
 };
+
+export function formatSingleTenderReviewCard(tender: TenderRecord, currentIndex: number, totalCount: number, nextOffset: number) {
+  const days = tender.endDate ? Math.ceil((tender.endDate - Date.now()) / (1000 * 60 * 60 * 24)) : null;
+
+  let text = `🔍 <b>ИНДИВИДУАЛЬНЫЙ ПОДБОР ТЕНДЕРА [${currentIndex} из ${totalCount}]</b>\n━━━━━━━━━━━━━━━━━━━━\n`;
+  text += `📋 <b>№ ${tender.numberAnno}</b> · ${tender.methodName}\n`;
+  text += `📌 <b>${tender.title}</b>\n\n`;
+  text += `💰 <b>Бюджет:</b> ${moneyFormatter.format(tender.budget)}\n`;
+  text += `🏢 <b>Заказчик:</b> ${tender.buyer}\n`;
+  text += `📍 <b>Регион:</b> ${tender.regionName}\n`;
+  text += `⏳ <b>Приём заявок:</b> ${tender.endDate ? `${dateFormatter.format(tender.endDate)} (${days !== null ? `${days} дн.` : "скоро"})` : "Не указано"}\n\n`;
+  text += `<i>Вам интересен данный лот?</i>`;
+
+  const buttons: Array<Array<{ text: string; url?: string; callback_data?: string }>> = [
+    [
+      { text: "💚 👍 Интересно (В избранное)", callback_data: `swipe_yes:${tender.externalId}:${nextOffset}` },
+    ],
+    [
+      { text: "📁 В работу", callback_data: `swipe_work:${tender.externalId}:${nextOffset}` },
+      { text: "🌐 На Госзакупки", url: tender.sourceUrl },
+    ],
+    [
+      { text: "❌ 👎 Не интересно (Пропустить)", callback_data: `swipe_no:${tender.externalId}:${nextOffset}` },
+    ],
+    [
+      { text: "📋 Завершить просмотр", callback_data: "cmd_filter" },
+    ],
+  ];
+
+  return { text, buttons, reply_markup: { inline_keyboard: buttons } };
+}
 
 export function formatTenderTelegramCard(tender: TenderRecord, profile?: CompanyProfile | null, note?: string, isAdmin = false, currentStage?: string) {
   const match = profile ? explainTenderMatch(tender, profile) : null;
@@ -1566,6 +1623,9 @@ export async function handleTelegramUpdate(update: {
       const navButtons: Array<Array<{ text: string; callback_data: string }>> = [];
       if (hasMore) {
         navButtons.push([
+          { text: "🔍 Смотреть другие по одному (Интересно / Пропустить)", callback_data: `swipe_page:${nextOffset}` }
+        ]);
+        navButtons.push([
           { text: `➡️ Показать ещё 3 тендера (${totalMatched - nextOffset} ост.)`, callback_data: `cmd_my_page:${nextOffset}` }
         ]);
       } else if (totalMatched > 3) {
@@ -1578,9 +1638,120 @@ export async function handleTelegramUpdate(update: {
         { text: "🔥 Горящие лоты", callback_data: "cmd_hot" },
       ]);
 
-      await sendTelegramMessage(fromId, hasMore ? `👇 <i>Нажмите кнопку ниже, чтобы просмотреть следующие 3 тендера:</i>` : `✅ <i>Вы просмотрели все доступные лоты по этому запросу.</i>`, {
+      await sendTelegramMessage(fromId, hasMore ? `👇 <i>Нажмите кнопку ниже, чтобы продолжить просмотр:</i>` : `✅ <i>Вы просмотрели все доступные лоты по этому запросу.</i>`, {
         reply_markup: { inline_keyboard: navButtons },
       });
+      return { ok: true };
+    }
+
+    // -------------------------------------------------------------
+    // Single Tender Swipe Mode (Интересно / Пропустить / В работу)
+    // -------------------------------------------------------------
+    if (data.startsWith("swipe_page:") || data.startsWith("swipe_yes:") || data.startsWith("swipe_no:") || data.startsWith("swipe_work:")) {
+      let offset = 0;
+      let action = "page";
+      let actionTenderId = "";
+
+      if (data.startsWith("swipe_page:")) {
+        offset = parseInt(data.slice(11), 10) || 0;
+      } else if (data.startsWith("swipe_yes:")) {
+        const parts = data.split(":");
+        actionTenderId = parts[1];
+        offset = parseInt(parts[2], 10) || 0;
+        action = "yes";
+      } else if (data.startsWith("swipe_no:")) {
+        const parts = data.split(":");
+        actionTenderId = parts[1];
+        offset = parseInt(parts[2], 10) || 0;
+        action = "no";
+      } else if (data.startsWith("swipe_work:")) {
+        const parts = data.split(":");
+        actionTenderId = parts[1];
+        offset = parseInt(parts[2], 10) || 0;
+        action = "work";
+      }
+
+      const sub = await getTelegramSubscriberByChatId(fromId);
+      const ownerKey = sub?.userId ? `user:${sub.userId}` : `user:tg_${fromId}`;
+
+      // Handle user's decision
+      if (action === "yes" && actionTenderId) {
+        await saveTenderWorkflow(ownerKey, actionTenderId, true, "studying");
+        await answerCallbackQuery(query.id, "⭐ Добавлено в избранное!", false);
+      } else if (action === "no" && actionTenderId) {
+        await saveTenderWorkflow(ownerKey, actionTenderId, false, "skipped");
+        await answerCallbackQuery(query.id, "⏭ Пропущено", false);
+      } else if (action === "work" && actionTenderId) {
+        await saveTenderWorkflow(ownerKey, actionTenderId, true, "participating");
+        await seedTenderTaskTemplate(actionTenderId, ownerKey).catch(() => void 0);
+        await answerCallbackQuery(query.id, "📁 Взято в работу! Дедлайны активированы.", false);
+      } else {
+        await answerCallbackQuery(query.id);
+      }
+
+      // Fetch fresh tenders list
+      const currentFilter = await getTelegramFilter(fromId);
+      const tenders = await listTenders(500);
+      const now = Date.now();
+      const cat = INDUSTRY_CATEGORIES.find((c) => c.id === currentFilter.category);
+
+      let matched = tenders
+        .filter((t) => !t.endDate || t.endDate > now)
+        .filter((t) => matchesTenderLocation(currentFilter.locality, t))
+        .filter((t) => {
+          if (!cat || !cat.keywords || cat.keywords.length === 0) return true;
+          if (cat.id === "construction" && t.isConstructionWork) return true;
+          const textToSearch = `${t.title} ${t.buyer} ${t.subjectType} ${t.methodName}`.toLowerCase();
+          return cat.keywords.some((k) => textToSearch.includes(k));
+        })
+        .filter((t) => !currentFilter.maxBudget || t.budget <= currentFilter.maxBudget);
+
+      if (matched.length === 0) {
+        matched = tenders.filter((t) => !t.endDate || t.endDate > now);
+        if (matched.length === 0) matched = tenders;
+      }
+
+      const totalMatched = matched.length;
+
+      // If finished all tenders
+      if (offset >= totalMatched) {
+        const finishMsg = `🎉 <b>ВЫ ПРОСМОТРЕЛИ ВСЕ ДОСТУПНЫЕ ТЕНДЕРЫ!</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+          `⭐ Все понравившиеся лоты сохранены в <b>«★ Избранное»</b>.\n` +
+          `📁 Все взятые в работу доступны в <b>«📁 Мои в работе»</b>.\n\n` +
+          `<i>Вы можете сменить регион/сферу поиска или начать просмотр сначала:</i>`;
+
+        const finishButtons = [
+          [{ text: "🔄 Начать просмотр сначала", callback_data: "swipe_page:0" }],
+          [{ text: "📁 Мои в работе", callback_data: "cmd_inwork" }],
+          [{ text: "⚙️ Изменить фильтр", callback_data: "open_filter_menu" }],
+        ];
+
+        if (query.message?.message_id) {
+          await editTelegramMessageText(fromId, query.message.message_id, finishMsg, {
+            reply_markup: { inline_keyboard: finishButtons },
+          });
+        } else {
+          await sendTelegramMessage(fromId, finishMsg, {
+            reply_markup: { inline_keyboard: finishButtons },
+          });
+        }
+        return { ok: true };
+      }
+
+      const tender = matched[offset];
+      const nextOffset = offset + 1;
+      const card = formatSingleTenderReviewCard(tender, offset + 1, totalMatched, nextOffset);
+
+      if (query.message?.message_id && action !== "page") {
+        // In-place smooth transition
+        await editTelegramMessageText(fromId, query.message.message_id, card.text, {
+          reply_markup: card.reply_markup,
+        });
+      } else {
+        await sendTelegramMessage(fromId, card.text, {
+          reply_markup: card.reply_markup,
+        });
+      }
       return { ok: true };
     }
 
