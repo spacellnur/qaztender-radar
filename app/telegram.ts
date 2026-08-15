@@ -8,7 +8,7 @@ import {
   saveTelegramFilter, saveTenderWorkflow, seedTenderTaskTemplate,
   updateTelegramSubscriberStatus, updateTenderTask
 } from "./db";
-import { localities } from "./TenderDashboard";
+import { localities } from "./localities";
 import { explainTenderMatch } from "./tender-matching";
 import type { CompanyProfile, TenderRecord, TenderStage } from "./tender-types";
 
