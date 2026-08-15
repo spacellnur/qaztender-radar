@@ -18,7 +18,8 @@ function loadEnv() {
 }
 
 const env = loadEnv();
-const serverUrl = process.env.SERVER_URL || "http://localhost:3000";
+const port = process.env.PORT || "3000";
+const serverUrl = process.env.SERVER_URL || `http://127.0.0.1:${port}`;
 
 console.log("⏰ Запуск адаптивного смарт-планировщика синхронизации QazTender Radar...");
 console.log("⚡ Рабочие часы (08:30 - 19:30): микро-синхронизация каждые 15 минут для мгновенного обнаружения новых лотов");
