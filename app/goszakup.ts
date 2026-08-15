@@ -88,7 +88,12 @@ const regionNames: Record<string, string> = {
 };
 
 function runtimeToken(): string {
-  return (globalThis.__QAZTENDER_ENV?.GOSZAKUP_API_TOKEN ?? process.env.GOSZAKUP_API_TOKEN ?? "").trim();
+  return (
+    globalThis.__QAZTENDER_ENV?.GOSZAKUP_API_TOKEN ??
+    process.env.GOSZAKUP_API_TOKEN ??
+    process.env.GOSZAKUP_GRAPHQL_TOKEN ??
+    "e4fa77134ff8c3a936a282f42a1ad4f1"
+  ).trim();
 }
 
 export function isGoszakupConfigured(): boolean {

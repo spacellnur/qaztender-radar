@@ -1168,117 +1168,7 @@ export async function handleTelegramUpdate(update: {
       return { ok: true };
     }
 
-    // Hot tenders command button
-    if (data === "cmd_hot") {
-      await answerCallbackQuery(query.id, "Загружаем горящие тендеры...");
-      const tenders = await listTenders(100);
-      const now = Date.now();
-      const hot = tenders
-        .filter((t) => t.endDate && t.endDate > now)
-        .sort((a, b) => (a.endDate ?? 0) - (b.endDate ?? 0))
-        .slice(0, 3);
 
-      if (hot.length === 0) {
-        await sendTelegramMessage(fromId, "ℹ️ На данный момент нет срочных активных объявлений.");
-      } else {
-        await sendTelegramMessage(fromId, `🔥 <b>ТОП-3 ГОРЯЩИХ ТЕНДЕРА (СКОРО ДЕДЛАЙН):</b>\n━━━━━━━━━━━━━━━━━━━━`);
-        for (const tender of hot) {
-          const card = formatTenderTelegramCard(tender);
-          await sendTelegramMessage(fromId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
-        }
-      }
-      return { ok: true };
-    }
-
-    // Top budget command button
-    if (data === "cmd_top") {
-      await answerCallbackQuery(query.id, "Загружаем топ тендеров...");
-      const tenders = await listTenders(100);
-      const top = [...tenders].sort((a, b) => b.budget - a.budget).slice(0, 3);
-
-      if (top.length === 0) {
-        await sendTelegramMessage(fromId, "ℹ️ Тендеры ещё не загружены.");
-      } else {
-        await sendTelegramMessage(fromId, `💎 <b>ТОП-3 КРУПНЕЙШИХ ТЕНДЕРА ПО БЮДЖЕТУ:</b>\n━━━━━━━━━━━━━━━━━━━━`);
-        for (const tender of top) {
-          const card = formatTenderTelegramCard(tender);
-          await sendTelegramMessage(fromId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
-        }
-      }
-      return { ok: true };
-    }
-
-    // Digest command button
-    if (data === "cmd_digest") {
-      await answerCallbackQuery(query.id, "Формируем сводку...");
-      const tenders = await listTenders(500);
-      const now = Date.now();
-      const active = tenders.filter((t) => !t.endDate || t.endDate > now);
-      const hotCount = active.filter((t) => t.endDate && (t.endDate - now) <= 3 * 86400000).length;
-      const totalBudget = active.reduce((acc, t) => acc + t.budget, 0);
-
-      const msg = `📊 <b>СВОДКА ТЕНДЕРОВ НА СЕГОДНЯ</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
-        `📦 Всего активных объявлений: <b>${active.length}</b>\n` +
-        `🔥 Срочных (дедлайн ≤ 3 дней): <b>${hotCount}</b>\n` +
-        `💰 Общий объём закупок: <b>${moneyFormatter.format(totalBudget)}</b>\n\n` +
-        `💡 <i>Нажмите кнопку ниже для просмотра:</i>`;
-
-      await sendTelegramMessage(fromId, msg, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🔥 Горящие тендеры", callback_data: "cmd_hot" }, { text: "💎 Топ по бюджету", callback_data: "cmd_top" }],
-          ],
-        },
-      });
-      return { ok: true };
-    }
-
-    // My matched tenders button
-    if (data === "cmd_my") {
-      await answerCallbackQuery(query.id, "Подбираем тендеры...");
-      const currentFilter = await getTelegramFilter(fromId);
-      const tenders = await listTenders(500);
-      const now = Date.now();
-      const loc = localities.find((l) => l.value === currentFilter.locality);
-      const cat = INDUSTRY_CATEGORIES.find((c) => c.id === currentFilter.category);
-
-      const matched = tenders
-        .filter((t) => !t.endDate || t.endDate > now)
-        .filter((t) => {
-          if (!loc || !loc.keywords || loc.keywords.length === 0) return true;
-          const textToSearch = `${t.title} ${t.buyer} ${t.regionName} ${t.kato}`.toLowerCase();
-          return loc.keywords.some((k) => textToSearch.includes(k));
-        })
-        .filter((t) => {
-          if (!cat || !cat.keywords || cat.keywords.length === 0) return true;
-          if (cat.id === "construction" && t.isConstructionWork) return true;
-          const textToSearch = `${t.title} ${t.buyer} ${t.subjectType} ${t.methodName}`.toLowerCase();
-          return cat.keywords.some((k) => textToSearch.includes(k));
-        })
-        .filter((t) => !currentFilter.maxBudget || t.budget <= currentFilter.maxBudget)
-        .slice(0, 3);
-
-      const locLabel = getLocalityLabel(currentFilter.locality);
-      const catLabel = getCategoryLabel(currentFilter.category);
-
-      if (matched.length === 0) {
-        await sendTelegramMessage(fromId, `🎯 По вашему фильтру (<b>${locLabel}</b> | <b>${catLabel}</b>) сейчас нет активных объявлений.\n\nНажмите ⚙️ «Настроить фильтр», чтобы изменить отрасль, город или сумму.`, {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "⚙️ Настроить фильтр", callback_data: "open_filter_menu" }],
-              [{ text: "🔥 Смотреть все горящие", callback_data: "cmd_hot" }],
-            ],
-          },
-        });
-      } else {
-        await sendTelegramMessage(fromId, `🎯 <b>ВАШИ ПОДХОДЯЩИЕ ТЕНДЕРЫ\n(${locLabel} • ${catLabel}):</b>\n━━━━━━━━━━━━━━━━━━━━`);
-        for (const tender of matched) {
-          const card = formatTenderTelegramCard(tender);
-          await sendTelegramMessage(fromId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
-        }
-      }
-      return { ok: true };
-    }
 
     // Open filter menu
     if (data === "open_filter_menu") {
@@ -1552,52 +1442,141 @@ export async function handleTelegramUpdate(update: {
       return { ok: true };
     }
 
-    if (data === "cmd_my_tenders") {
-      await answerCallbackQuery(query.id);
-      return handleTelegramWebhook({
-        update_id: query.id ? Number(query.id) : 0,
-        message: {
-          chat: { id: fromId },
-          from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
-          text: "/tenders",
-        },
-      });
+    if (data === "cmd_my_tenders" || data === "cmd_my" || data === "cmd_tenders") {
+      await answerCallbackQuery(query.id, "Подбираем тендеры...");
+      const currentFilter = await getTelegramFilter(fromId);
+      const tenders = await listTenders(500);
+      const now = Date.now();
+      const loc = localities.find((l) => l.value === currentFilter.locality);
+      const cat = INDUSTRY_CATEGORIES.find((c) => c.id === currentFilter.category);
+
+      let matched = tenders
+        .filter((t) => !t.endDate || t.endDate > now)
+        .filter((t) => {
+          if (!loc || !loc.keywords || loc.keywords.length === 0) return true;
+          const textToSearch = `${t.title} ${t.buyer} ${t.regionName} ${t.kato}`.toLowerCase();
+          return loc.keywords.some((k) => textToSearch.includes(k));
+        })
+        .filter((t) => {
+          if (!cat || !cat.keywords || cat.keywords.length === 0) return true;
+          if (cat.id === "construction" && t.isConstructionWork) return true;
+          const textToSearch = `${t.title} ${t.buyer} ${t.subjectType} ${t.methodName}`.toLowerCase();
+          return cat.keywords.some((k) => textToSearch.includes(k));
+        })
+        .filter((t) => !currentFilter.maxBudget || t.budget <= currentFilter.maxBudget)
+        .slice(0, 3);
+
+      if (matched.length === 0) {
+        matched = tenders.filter((t) => !t.endDate || t.endDate > now).slice(0, 3);
+      }
+      if (matched.length === 0) {
+        matched = tenders.slice(0, 3);
+      }
+
+      const locLabel = getLocalityLabel(currentFilter.locality);
+      const catLabel = getCategoryLabel(currentFilter.category);
+
+      if (matched.length === 0) {
+        await sendTelegramMessage(fromId, `ℹ️ На данный момент нет активных объявлений. Скоро появятся новые лоты!`);
+      } else {
+        await sendTelegramMessage(fromId, `🎯 <b>ВАШИ ПОДХОДЯЩИЕ ТЕНДЕРЫ\n(${locLabel} • ${catLabel}):</b>\n━━━━━━━━━━━━━━━━━━━━`);
+        for (const tender of matched) {
+          const card = formatTenderTelegramCard(tender);
+          await sendTelegramMessage(fromId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
+        }
+      }
+      return { ok: true };
     }
 
     if (data === "cmd_inwork") {
       await answerCallbackQuery(query.id);
-      return handleTelegramWebhook({
-        update_id: query.id ? Number(query.id) : 0,
-        message: {
-          chat: { id: fromId },
-          from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
-          text: "/inwork",
-        },
-      });
+      const sub = await getTelegramSubscriberByChatId(fromId);
+      const ownerKey = sub?.userId ? `user:${sub.userId}` : `user:tg_${fromId}`;
+      const workflows = await listTenderWorkflow(ownerKey);
+      const inWork = workflows.filter((w) => w.stage !== "none" && w.stage !== "skipped");
+
+      if (inWork.length === 0) {
+        await sendTelegramMessage(fromId, `📁 <b>У вас пока нет тендеров в работе.</b>\n\nКогда вы нажимаете кнопку <b>«📁 В работу»</b> под карточкой любого тендера, он сохраняется здесь, и бот будет напоминать вам о дедлайне подачи заявки!`, {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🎯 Найти подходящие тендеры", callback_data: "cmd_my_tenders" }],
+              [{ text: "🔥 Смотреть горящие", callback_data: "cmd_hot" }],
+            ],
+          },
+        });
+      } else {
+        await sendTelegramMessage(fromId, `📁 <b>ВАШИ ТЕНДЕРЫ В РАБОТЕ (${inWork.length}):</b>\n━━━━━━━━━━━━━━━━━━━━`);
+        for (const wf of inWork.slice(0, 5)) {
+          const t = await getTenderById(wf.tenderId);
+          if (t) {
+            const card = formatTenderTelegramCard(t);
+            await sendTelegramMessage(fromId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
+          }
+        }
+      }
+      return { ok: true };
     }
 
     if (data === "cmd_hot") {
-      await answerCallbackQuery(query.id);
-      return handleTelegramWebhook({
-        update_id: query.id ? Number(query.id) : 0,
-        message: {
-          chat: { id: fromId },
-          from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
-          text: "/hot",
-        },
-      });
+      await answerCallbackQuery(query.id, "Загружаем горящие тендеры...");
+      const tenders = await listTenders(100);
+      const now = Date.now();
+      let hot = tenders
+        .filter((t) => t.endDate && t.endDate > now)
+        .sort((a, b) => (a.endDate ?? 0) - (b.endDate ?? 0))
+        .slice(0, 3);
+
+      if (hot.length === 0) {
+        hot = tenders.slice(0, 3);
+      }
+
+      if (hot.length === 0) {
+        await sendTelegramMessage(fromId, "ℹ️ На данный момент нет срочных активных объявлений.");
+      } else {
+        await sendTelegramMessage(fromId, `🔥 <b>ТОП ГОРЯЩИХ ТЕНДЕРОВ (СКОРО ДЕДЛАЙН):</b>\n━━━━━━━━━━━━━━━━━━━━`);
+        for (const tender of hot) {
+          const card = formatTenderTelegramCard(tender);
+          await sendTelegramMessage(fromId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
+        }
+      }
+      return { ok: true };
     }
 
     if (data === "cmd_top") {
+      await answerCallbackQuery(query.id, "Загружаем топ тендеров...");
+      const tenders = await listTenders(100);
+      let top = [...tenders].sort((a, b) => b.budget - a.budget).slice(0, 3);
+      if (top.length === 0) {
+        top = tenders.slice(0, 3);
+      }
+
+      if (top.length === 0) {
+        await sendTelegramMessage(fromId, "ℹ️ Тендеры ещё не загружены.");
+      } else {
+        await sendTelegramMessage(fromId, `💎 <b>ТОП-3 КРУПНЕЙШИХ ТЕНДЕРА ПО БЮДЖЕТУ:</b>\n━━━━━━━━━━━━━━━━━━━━`);
+        for (const tender of top) {
+          const card = formatTenderTelegramCard(tender);
+          await sendTelegramMessage(fromId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
+        }
+      }
+      return { ok: true };
+    }
+
+    if (data === "cmd_info") {
       await answerCallbackQuery(query.id);
-      return handleTelegramWebhook({
-        update_id: query.id ? Number(query.id) : 0,
-        message: {
-          chat: { id: fromId },
-          from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
-          text: "/top",
-        },
-      });
+      const guideText = `📖 <b>СПРАВКА И РУКОВОДСТВО ПО БОТУ:</b>\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `🎯 <b>Как работает радар?</b>\n` +
+        `• Бот мониторит официальный портал Госзакупок РК и моментально находит свежие лоты.\n` +
+        `• В разделе <b>«⚙️ Настроить фильтр»</b> выберите ваш город/район и отрасль.\n` +
+        `• Нажимайте <b>«🎯 Мои тендеры»</b> для персональной выборки.\n\n` +
+        `📁 <b>Управление закупками:</b>\n` +
+        `• <b>★ В избранное</b> — сохраняет лот в закладки.\n` +
+        `• <b>📁 В работу</b> — берёт лот в работу и включает персональные напоминания о дедлайне за 48ч, 24ч и 3ч.\n` +
+        `• <b>⛔ Скрыть</b> — убирает ненужный лот из ленты.\n\n` +
+        `🌐 <b>Сайт платформы:</b>\n` +
+        `• Нажмите <b>«🌐 Войти на сайт»</b> или команду /web для работы на компьютере без паролей!`;
+      await sendTelegramMessage(fromId, guideText, { reply_markup: MAIN_INLINE_MENU });
+      return { ok: true };
     }
 
     if (data === "cmd_filter") {
@@ -1610,8 +1589,8 @@ export async function handleTelegramUpdate(update: {
       await answerCallbackQuery(query.id);
       return handleTelegramUpdate({
         message: {
-          chat: { id: fromId },
-          from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
+          chat: { id: Number(fromId) },
+          from: { id: Number(fromId), username: query.from.username, first_name: query.from.first_name },
           text: "/web",
         },
       });
@@ -1621,8 +1600,8 @@ export async function handleTelegramUpdate(update: {
       await answerCallbackQuery(query.id);
       return handleTelegramUpdate({
         message: {
-          chat: { id: fromId },
-          from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
+          chat: { id: Number(fromId) },
+          from: { id: Number(fromId), username: query.from.username, first_name: query.from.first_name },
           text: "/ref",
         },
       });
@@ -1632,8 +1611,8 @@ export async function handleTelegramUpdate(update: {
       await answerCallbackQuery(query.id);
       return handleTelegramUpdate({
         message: {
-          chat: { id: fromId },
-          from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
+          chat: { id: Number(fromId) },
+          from: { id: Number(fromId), username: query.from.username, first_name: query.from.first_name },
           text: "/pricing",
         },
       });
@@ -1643,12 +1622,13 @@ export async function handleTelegramUpdate(update: {
       await answerCallbackQuery(query.id);
       return handleTelegramUpdate({
         message: {
-          chat: { id: fromId },
-          from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
+          chat: { id: Number(fromId) },
+          from: { id: Number(fromId), username: query.from.username, first_name: query.from.first_name },
           text: "/status",
         },
       });
     }
+
 
     if (data === "cmd_stats" || data === "cmd_crm") {
       await answerCallbackQuery(query.id);

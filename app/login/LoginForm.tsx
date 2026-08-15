@@ -22,12 +22,12 @@ export default function LoginForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: tgCode.trim() }),
       });
+      const result = (await response.json().catch(() => null)) as { error?: string; redirectUrl?: string } | null;
       if (!response.ok) {
-        const result = (await response.json().catch(() => null)) as { error?: string } | null;
         setError(result?.error ?? "Неверный или просроченный код. Отправьте /web в боте.");
         return;
       }
-      window.location.assign("/");
+      window.location.assign(result?.redirectUrl || "/");
     } catch {
       setError("Ошибка сети. Попробуйте ещё раз.");
     } finally {

