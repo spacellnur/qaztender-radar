@@ -1608,8 +1608,7 @@ export async function handleTelegramUpdate(update: {
 
     if (data === "cmd_web") {
       await answerCallbackQuery(query.id);
-      return handleTelegramWebhook({
-        update_id: query.id ? Number(query.id) : 0,
+      return handleTelegramUpdate({
         message: {
           chat: { id: fromId },
           from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
@@ -1620,8 +1619,7 @@ export async function handleTelegramUpdate(update: {
 
     if (data === "cmd_ref") {
       await answerCallbackQuery(query.id);
-      return handleTelegramWebhook({
-        update_id: query.id ? Number(query.id) : 0,
+      return handleTelegramUpdate({
         message: {
           chat: { id: fromId },
           from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
@@ -1632,8 +1630,7 @@ export async function handleTelegramUpdate(update: {
 
     if (data === "cmd_pricing") {
       await answerCallbackQuery(query.id);
-      return handleTelegramWebhook({
-        update_id: query.id ? Number(query.id) : 0,
+      return handleTelegramUpdate({
         message: {
           chat: { id: fromId },
           from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
@@ -1644,8 +1641,7 @@ export async function handleTelegramUpdate(update: {
 
     if (data === "cmd_status") {
       await answerCallbackQuery(query.id);
-      return handleTelegramWebhook({
-        update_id: query.id ? Number(query.id) : 0,
+      return handleTelegramUpdate({
         message: {
           chat: { id: fromId },
           from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
@@ -1693,8 +1689,7 @@ export async function handleTelegramUpdate(update: {
 
     if (data === "cmd_info") {
       await answerCallbackQuery(query.id);
-      return handleTelegramWebhook({
-        update_id: query.id ? Number(query.id) : 0,
+      return handleTelegramUpdate({
         message: {
           chat: { id: fromId },
           from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
@@ -1875,4 +1870,7 @@ export async function broadcastReapplyRequestToAllUsers(): Promise<{ notified: n
   }
   return { notified };
 }
+
+export const handleTelegramWebhook = handleTelegramUpdate;
+
 
