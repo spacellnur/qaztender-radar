@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     region: frankfurt
-    buildCommand: npm install -g pnpm && pnpm install --frozen-lockfile && pnpm run build
+    buildCommand: npm install -g pnpm && pnpm install --no-frozen-lockfile && pnpm run build
     startCommand: node scripts/start-render.mjs
     envVars:
       - key: NODE_ENV
