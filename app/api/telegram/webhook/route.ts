@@ -13,14 +13,18 @@ export async function POST(request: Request) {
       registerBotCommands().catch(() => void 0);
       commandsRegistered = true;
     }
-    const update = await request.json() as Parameters<typeof handleTelegramUpdate>[0];
-    const result = await handleTelegramUpdate(update);
-    return Response.json(result);
+    const update = await request.json().catch(() => null) as Parameters<typeof handleTelegramUpdate>[0];
+    if (update) {
+      await handleTelegramUpdate(update).catch((err) => {
+        console.error("❌ Telegram update handling error:", err);
+      });
+    }
+    return Response.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error";
-    const stack = error instanceof Error ? error.stack : "";
-    console.error("❌ Telegram Webhook Error:", message, stack);
-    return Response.json({ error: message, stack }, { status: 500 });
+    console.error("❌ Telegram Webhook POST Catch:", message);
+    return Response.json({ ok: true, error: message });
   }
 }
+
 

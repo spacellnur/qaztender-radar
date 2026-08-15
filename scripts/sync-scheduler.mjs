@@ -60,9 +60,21 @@ async function checkAndSync() {
   }
 }
 
+// Keep-Alive Heartbeat: pings the public Render endpoint every 9 minutes so Render free tier never sleeps
+const publicUrl = process.env.PUBLIC_APP_URL || "https://qaztender-radar-xf7n.onrender.com";
+setInterval(async () => {
+  try {
+    const res = await fetch(`${publicUrl}/api/telegram/webhook`);
+    console.log(`[Heartbeat] ❤️ Render Keep-Alive status: ${res.status}`);
+  } catch (e) {
+    console.warn(`[Heartbeat] Keep-Alive ping warning: ${e.message}`);
+  }
+}, 9 * 60 * 1000);
+
 // Initial sync on start
 await checkAndSync();
 
 // Check scheduler loop every 30 seconds
 setInterval(checkAndSync, 30 * 1000);
+
 
