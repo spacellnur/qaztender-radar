@@ -918,24 +918,19 @@ export async function handleTelegramUpdate(update: {
       const locLabel = getLocalityLabel(currentFilter.locality);
       const catLabel = getCategoryLabel(currentFilter.category);
 
-      if (matched.length === 0) {
-        await sendTelegramMessage(chatId, `🎯 По вашему фильтру (<b>${locLabel}</b> | <b>${catLabel}</b>) сейчас нет активных объявлений.\n\nНажмите ⚙️ «Настроить фильтр», чтобы изменить отрасль, город или сумму.`, {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "⚙️ Настроить фильтр", callback_data: "open_filter_menu" }],
-              [{ text: "🔥 Смотреть все горящие", callback_data: "cmd_hot" }],
-            ],
-          },
-        });
-        return { ok: true };
+      let displayTenders = matched;
+      let headerNote = "";
+      if (displayTenders.length === 0) {
+        displayTenders = tenders.filter((t) => !t.endDate || t.endDate > now).slice(0, 3);
+        if (displayTenders.length === 0) displayTenders = tenders.slice(0, 3);
+        headerNote = `\n<i>(По фильтру «${locLabel} • ${catLabel}» точных совпадений нет, показываем ближайшие актуальные лоты)</i>`;
       }
 
       const remainingNote = chatId === adminChatId ? "" : `\n<i>(Осталось поисков: ${searchLimit.remaining}/${MAX_SEARCHES_PER_HOUR} на этот час)</i>`;
-      await sendTelegramMessage(chatId, `🎯 <b>ВАШИ ПОДХОДЯЩИЕ ТЕНДЕРЫ\n(${locLabel} • ${catLabel}):</b>${remainingNote}\n━━━━━━━━━━━━━━━━━━━━`);
-      for (const tender of matched) {
+      await sendTelegramMessage(chatId, `🎯 <b>ВАШИ ПОДХОДЯЩИЕ ТЕНДЕРЫ\n(${locLabel} • ${catLabel}):</b>${headerNote}${remainingNote}\n━━━━━━━━━━━━━━━━━━━━`);
+      for (const tender of displayTenders) {
         const card = formatTenderTelegramCard(tender);
         await sendTelegramMessage(chatId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
-      }
       return { ok: true };
     }
 
