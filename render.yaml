@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: qaztender-radar
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm install -g pnpm && pnpm install --frozen-lockfile && pnpm run build
+    startCommand: node scripts/start-render.mjs
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: TELEGRAM_BOT_TOKEN
+        value: 8719115205:AAFO6sZ6p0HN_IKFFpnDGp97fTYQ6hxTpoM
+      - key: ADMIN_TELEGRAM_CHAT_ID
+        value: "964524397"
+      - key: GOSZAKUP_GRAPHQL_TOKEN
+        value: e4fa77134ff8c3a936a282f42a1ad4f1

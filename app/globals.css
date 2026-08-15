@@ -339,6 +339,153 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .empty-state p { color: var(--muted); font-size: 13px; }
 .empty-state button { border: 0; background: var(--ink); color: white; padding: 10px 14px; }
 
+/* View Mode Switcher */
+.feed-heading-controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.view-mode-switch { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; background: white; padding: 2px; }
+.view-mode-switch button { border: 0; background: transparent; padding: 5px 11px; font: inherit; font-size: 11px; font-weight: 700; color: var(--muted); border-radius: 3px; cursor: pointer; transition: all .15s ease; }
+.view-mode-switch button.active { background: var(--ink); color: white; }
+.view-mode-switch button:not(.active):hover { background: #f0eee6; color: var(--ink); }
+
+/* Deadlines Timeline & Kanban Grid */
+.deadlines-timeline { display: grid; gap: 24px; }
+.deadline-group { background: white; border: 1px solid var(--line); border-radius: 6px; padding: 18px 20px; }
+.deadline-group.urgency-critical { border-left: 4px solid #d93829; background: linear-gradient(180deg, #fff8f7 0%, white 40px); }
+.deadline-group.urgency-high { border-left: 4px solid #e06d10; background: linear-gradient(180deg, #fffbf5 0%, white 40px); }
+.deadline-group.urgency-medium { border-left: 4px solid #caa000; }
+.deadline-group.urgency-low { border-left: 4px solid #2e8b57; }
+.deadline-group.urgency-none { border-left: 4px solid #8f9994; }
+
+.deadline-group-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.deadline-group-header .group-icon { font-size: 16px; }
+.deadline-group-header h3 { margin: 0; font-size: 14px; font-weight: 800; color: var(--ink); }
+.deadline-group-header .group-count { margin-left: auto; font-size: 11px; font-weight: 800; background: #eef1ee; padding: 2px 8px; border-radius: 12px; color: #46524c; }
+
+.deadline-cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.deadline-card { background: #fafaf8; border: 1px solid #e2e4df; border-radius: 4px; padding: 14px; display: grid; gap: 10px; cursor: pointer; transition: all .15s ease; position: relative; }
+.deadline-card:hover { border-color: var(--ink); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+.deadline-card.active { border-color: var(--lime-deep); background: #f4f8f4; }
+.deadline-card-top { display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: 700; }
+.deadline-card-anno { color: #6b7771; }
+.deadline-card-badge { padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 800; }
+.urgency-critical .deadline-card-badge { background: #ffdedb; color: #b71c1c; }
+.urgency-high .deadline-card-badge { background: #ffe9d6; color: #c45500; }
+.urgency-medium .deadline-card-badge { background: #fff5cc; color: #8a6d00; }
+.urgency-low .deadline-card-badge { background: #e0f4e8; color: #1b5e20; }
+.urgency-none .deadline-card-badge { background: #e8eae8; color: #5f6b65; }
+
+.deadline-card h4 { margin: 0; font-size: 12px; font-weight: 700; color: var(--ink); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.deadline-card-buyer { margin: 0; font-size: 10px; color: #727e78; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.deadline-card-footer { display: flex; justify-content: space-between; border-top: 1px solid #e8eae6; padding-top: 8px; font-size: 10px; }
+.deadline-card-budget small, .deadline-card-date small { display: block; font-size: 8px; color: #8f9994; text-transform: uppercase; letter-spacing: .06em; }
+.deadline-card-budget strong { font-size: 11px; color: var(--ink); }
+.deadline-card-date span { color: #46524c; font-weight: 600; }
+.deadline-card-status { display: flex; justify-content: space-between; align-items: center; font-size: 10px; }
+.stage-pill { padding: 1px 6px; border-radius: 3px; background: #e2e6e3; font-size: 9px; font-weight: 700; color: #36413c; }
+.deadline-card-btn { border: 0; background: transparent; color: #2d6a4f; font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; padding: 2px 4px; transition: color .15s ease; }
+.deadline-card-btn:hover { color: var(--ink); text-decoration: underline; }
+.fav-star { color: #d97706; font-size: 12px; }
+
+/* Checklist Template Picker */
+.template-selector-box { background: #1a2420; border: 1px solid #36423d; border-radius: 4px; padding: 12px; margin-bottom: 14px; display: grid; gap: 8px; }
+.template-selector-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.template-title-label { font-size: 10px; font-weight: 700; color: #a4b0a9; text-transform: uppercase; letter-spacing: .08em; }
+.template-selector-header select { background: #26332d; border: 1px solid #4a5952; color: white; border-radius: 3px; padding: 4px 8px; font: inherit; font-size: 11px; }
+.template-desc { margin: 0; font-size: 10px; color: #b0bbb5; line-height: 1.4; }
+.template-apply-btn { justify-self: start; border: 0; background: var(--lime); color: var(--ink); border-radius: 3px; padding: 5px 12px; font: inherit; font-size: 10px; font-weight: 800; cursor: pointer; transition: opacity .15s ease; }
+.template-apply-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Notes Workspace */
+.notes-workspace { display: grid; gap: 14px; }
+.notes-box-header { border-bottom: 1px solid #35403b; padding-bottom: 10px; }
+.notes-subtitle { margin: 4px 0 0; color: #9aa59f; font-size: 10px; line-height: 1.45; }
+.note-status-message { background: #26342e; color: var(--lime); padding: 6px 10px; border-radius: 3px; font-size: 10px; margin: 0; }
+.new-note-box textarea { width: 100%; box-sizing: border-box; background: #18221e; border: 1px solid #404e47; border-radius: 4px; color: white; padding: 10px; font: inherit; font-size: 11px; resize: vertical; line-height: 1.45; }
+.new-note-box textarea:focus { outline: none; border-color: var(--lime); }
+.new-note-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+.char-count { font-size: 9px; color: #7d8983; }
+.save-note-btn { border: 0; background: var(--lime); color: var(--ink); border-radius: 3px; padding: 6px 14px; font: inherit; font-size: 10px; font-weight: 800; cursor: pointer; }
+.save-note-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.notes-list { display: grid; gap: 10px; max-height: 360px; overflow-y: auto; }
+.note-card { background: #202b26; border: 1px solid #384640; border-radius: 4px; padding: 12px; display: grid; gap: 8px; }
+.note-card-header { display: flex; justify-content: space-between; align-items: center; font-size: 10px; }
+.note-author { display: flex; align-items: center; gap: 6px; color: #e1e7e4; }
+.author-avatar { width: 18px; height: 18px; border-radius: 50%; background: var(--lime); color: var(--ink); display: grid; place-items: center; font-size: 9px; font-weight: 900; }
+.note-meta { display: flex; align-items: center; gap: 8px; color: #84918a; font-size: 9px; }
+.delete-note-btn { border: 0; background: transparent; color: #e99a85; font-size: 16px; cursor: pointer; padding: 0 4px; line-height: 1; }
+.note-body { color: #d0d8d4; font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.notes-loading { color: #9aa59f; font-size: 11px; }
+
+/* Personalization & Keyword Match Styles (Stage B) */
+.card-meta-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.hide-button, .unhide-button { border: 1px solid #d4ded8; background: #f0f4f1; color: #526359; border-radius: 3px; font: inherit; font-size: 9px; font-weight: 700; padding: 2px 7px; cursor: pointer; transition: all .15s ease; }
+.hide-button:hover { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
+.unhide-button { background: #dcfce7; border-color: #86efac; color: #166534; }
+.unhide-button:hover { background: #bbf7d0; color: #14532d; }
+
+.hide-mini-btn, .unhide-mini-btn { border: 0; background: transparent; font: inherit; font-size: 9px; font-weight: 700; cursor: pointer; padding: 2px 4px; border-radius: 3px; transition: color .15s ease; }
+.hide-mini-btn { color: #84918a; }
+.hide-mini-btn:hover { color: #b91c1c; text-decoration: underline; }
+.unhide-mini-btn { color: #15803d; }
+.unhide-mini-btn:hover { color: #166534; text-decoration: underline; }
+
+.keyword-chip { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: 3px; font-size: 10px; font-weight: 700; }
+.keyword-chip.positive { background: #dcfce7; color: #14532d; border: 1px solid #bbf7d0; }
+.keyword-chip.negative { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+
+.match-keyword-group { margin: 8px 0; display: grid; gap: 4px; }
+.group-title { font-size: 10px; font-weight: 700; color: #a4b0a9; text-transform: uppercase; letter-spacing: .06em; }
+.keyword-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.keyword-tag { display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; }
+.keyword-tag.positive { background: #1b382b; color: #a3e635; border: 1px solid #2d5a44; }
+.keyword-tag.negative { background: #3b1d1d; color: #f87171; border: 1px solid #5f2727; }
+
+.keywords-fieldset textarea, .negative-keywords-fieldset textarea { width: 100%; box-sizing: border-box; background: white; border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; font: inherit; font-size: 12px; resize: vertical; line-height: 1.4; }
+.keywords-fieldset textarea:focus, .negative-keywords-fieldset textarea:focus { outline: none; border-color: var(--ink); }
+
+/* Telegram Integration Styles */
+.telegram-widget-box { background: #1b2621; border: 1px solid #33443b; border-radius: 5px; padding: 14px; margin: 12px 0; display: grid; gap: 10px; }
+.tg-widget-header { display: flex; align-items: flex-start; gap: 10px; }
+.tg-icon { width: 28px; height: 28px; border-radius: 50%; background: #229ed9; color: white; display: grid; place-items: center; font-size: 14px; flex-shrink: 0; }
+.tg-widget-header strong { display: block; color: white; font-size: 12px; }
+.tg-widget-header p { margin: 2px 0 0; color: #a2b0a8; font-size: 10px; line-height: 1.4; }
+.tg-action-msg { margin: 0; background: #26382f; color: var(--lime); padding: 6px 10px; border-radius: 3px; font-size: 10px; }
+.tg-widget-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tg-connect-btn { border: 0; background: #229ed9; color: white; border-radius: 3px; padding: 6px 14px; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; transition: opacity .15s; }
+.tg-connect-btn:hover { opacity: 0.9; }
+.tg-pending-badge { color: #f59e0b; font-size: 10px; font-weight: 700; background: #3b2811; padding: 4px 8px; border-radius: 3px; border: 1px solid #63451e; }
+.tg-connected-actions { display: flex; gap: 8px; }
+.tg-test-btn { border: 0; background: var(--lime); color: var(--ink); border-radius: 3px; padding: 5px 12px; font: inherit; font-size: 10px; font-weight: 800; cursor: pointer; }
+.tg-reconnect-btn { border: 1px solid #4a5c53; background: transparent; color: #a4b3ab; border-radius: 3px; padding: 5px 10px; font: inherit; font-size: 10px; cursor: pointer; }
+
+/* Admin Recommend Button and Modal */
+.recommend-btn { border: 1px solid #229ed9; background: rgba(34, 158, 217, 0.12); color: #7dd3fc; border-radius: 3px; padding: 4px 10px; font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
+.recommend-btn:hover, .recommend-btn.active { background: #229ed9; color: white; }
+.recommend-modal-box { background: #17241e; border: 1px solid #34483e; border-radius: 5px; padding: 14px; margin: 10px 0; display: grid; gap: 10px; }
+.recommend-modal-box h4 { margin: 0; font-size: 12px; color: white; }
+.recommend-modal-box label { display: grid; gap: 4px; font-size: 10px; color: #a4b3ab; font-weight: 700; }
+.recommend-modal-box select, .recommend-modal-box textarea { width: 100%; box-sizing: border-box; background: #223129; border: 1px solid #3e5348; color: white; border-radius: 4px; padding: 6px 8px; font: inherit; font-size: 11px; }
+.recommend-result { margin: 0; color: var(--lime); font-size: 10px; }
+.recommend-actions { display: flex; gap: 8px; }
+.btn-send-recommend { border: 0; background: #229ed9; color: white; border-radius: 3px; padding: 6px 14px; font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
+.btn-send-recommend:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-cancel-recommend { border: 1px solid #44584e; background: transparent; color: #a4b3ab; border-radius: 3px; padding: 6px 12px; font: inherit; font-size: 10px; cursor: pointer; }
+
+/* Team Manager Telegram Controls */
+.team-member-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: white; border: 1px solid var(--line); border-radius: 4px; padding: 12px 16px; margin-bottom: 8px; }
+.team-member-info { display: grid; gap: 2px; flex: 1; }
+.tg-handle { color: #0284c7; font-weight: 600; }
+.team-member-badges { display: flex; align-items: center; gap: 10px; }
+.tg-status-block { display: flex; align-items: center; gap: 6px; }
+.tg-pill { font-size: 9px; font-weight: 700; padding: 3px 8px; border-radius: 3px; }
+.tg-pill.approved { background: #dcfce7; color: #166534; }
+.tg-pill.pending { background: #fef3c7; color: #92400e; }
+.tg-pill.rejected { background: #fee2e2; color: #991b1b; }
+.tg-pill.paused { background: #f1f5f9; color: #475569; }
+.tg-action-btns { display: flex; gap: 4px; }
+.btn-approve { border: 0; background: #16a34a; color: white; border-radius: 3px; padding: 3px 8px; font: inherit; font-size: 9px; font-weight: 700; cursor: pointer; }
+.btn-reject { border: 0; background: #dc2626; color: white; border-radius: 3px; padding: 3px 8px; font: inherit; font-size: 9px; font-weight: 700; cursor: pointer; }
+.btn-pause { border: 1px solid #cbd5e1; background: white; color: #475569; border-radius: 3px; padding: 3px 8px; font: inherit; font-size: 9px; cursor: pointer; }
+
 footer { background: #e8e6dc; border-top: 1px solid var(--line); padding: 24px clamp(22px, 4vw, 64px); display: flex; justify-content: space-between; gap: 30px; color: var(--muted); font-size: 10px; }
 footer div { display: flex; gap: 14px; }
 footer strong { color: var(--ink); }

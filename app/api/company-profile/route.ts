@@ -7,7 +7,44 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({})) as Record<string, unknown>;
   const text = (key: string) => typeof body[key] === "string" ? body[key].trim() : "";
   const number = (key: string) => Number(body[key]);
-  const profile = { companyName: text("companyName"), bin: text("bin"), regions: text("regions"), workCategories: text("workCategories"), licenses: text("licenses"), experienceYears: number("experienceYears"), employeeCount: number("employeeCount"), minBudget: number("minBudget"), maxBudget: number("maxBudget") };
+  
+  let keywordsStr = "[]";
+  let negativeKeywordsStr = "[]";
+  if (typeof body.keywords === "string") {
+    try {
+      const parsed = JSON.parse(body.keywords);
+      keywordsStr = JSON.stringify(Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === "string" && Boolean(k.trim())).map((k) => k.trim().slice(0, 50)).slice(0, 50) : []);
+    } catch {
+      keywordsStr = JSON.stringify(body.keywords.split(",").map((k) => k.trim()).filter(Boolean).slice(0, 50));
+    }
+  } else if (Array.isArray(body.keywords)) {
+    keywordsStr = JSON.stringify(body.keywords.filter((k): k is string => typeof k === "string" && Boolean(k.trim())).map((k) => k.trim().slice(0, 50)).slice(0, 50));
+  }
+
+  if (typeof body.negativeKeywords === "string") {
+    try {
+      const parsed = JSON.parse(body.negativeKeywords);
+      negativeKeywordsStr = JSON.stringify(Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === "string" && Boolean(k.trim())).map((k) => k.trim().slice(0, 50)).slice(0, 50) : []);
+    } catch {
+      negativeKeywordsStr = JSON.stringify(body.negativeKeywords.split(",").map((k) => k.trim()).filter(Boolean).slice(0, 50));
+    }
+  } else if (Array.isArray(body.negativeKeywords)) {
+    negativeKeywordsStr = JSON.stringify(body.negativeKeywords.filter((k): k is string => typeof k === "string" && Boolean(k.trim())).map((k) => k.trim().slice(0, 50)).slice(0, 50));
+  }
+
+  const profile = {
+    companyName: text("companyName"),
+    bin: text("bin"),
+    regions: text("regions"),
+    workCategories: text("workCategories"),
+    licenses: text("licenses"),
+    experienceYears: number("experienceYears"),
+    employeeCount: number("employeeCount"),
+    minBudget: number("minBudget"),
+    maxBudget: number("maxBudget"),
+    keywords: keywordsStr,
+    negativeKeywords: negativeKeywordsStr,
+  };
   let regionCount = 0;
   let directionCount = 0;
   try {

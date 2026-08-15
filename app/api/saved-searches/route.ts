@@ -4,7 +4,7 @@ import type { AlertFrequency, TenderSearchFilters } from "../../tender-types";
 
 const frequencies: AlertFrequency[] = ["off", "instant", "daily"];
 const stringKeys: Array<Exclude<keyof TenderSearchFilters, "constructionOnly">> = [
-  "query", "region", "subject", "budget", "deadline", "announcementNumber", "customer", "method", "status",
+  "query", "region", "locality", "subject", "budget", "deadline", "announcementNumber", "customer", "method", "status",
   "amountFrom", "amountTo", "publishedFrom", "publishedTo", "endingFrom", "endingTo", "financialYear", "sort",
 ];
 

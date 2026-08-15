@@ -48,6 +48,7 @@ export type AlertFrequency = "off" | "instant" | "daily";
 export type TenderSearchFilters = {
   query: string;
   region: string;
+  locality?: string;
   subject: string;
   budget: string;
   deadline: string;
@@ -86,6 +87,8 @@ export type CompanyProfile = {
   employeeCount: number;
   minBudget: number;
   maxBudget: number;
+  keywords: string[];
+  negativeKeywords: string[];
   updatedAt: number;
 };
 
@@ -148,3 +151,36 @@ export type TenderTaskWorkspace = {
   tasks: TenderTask[];
   members: TaskTeamMember[];
 };
+
+export type ChecklistTemplateType = "open_tender" | "auction" | "price_quote" | "single_source" | "standard";
+
+export type TenderNote = {
+  id: string;
+  tenderId: string;
+  ownerKey: string;
+  authorName: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type TelegramSubscriberStatus = "pending" | "approved" | "rejected" | "paused";
+
+export type TelegramSubscriber = {
+  id: string;
+  userId: string;
+  chatId: string;
+  username: string;
+  firstName: string;
+  status: TelegramSubscriberStatus;
+  requestedAt: number;
+  approvedAt: number | null;
+  approvedBy: string | null;
+  digestEnabled: boolean;
+  instantEnabled: boolean;
+  deadlinesEnabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
+

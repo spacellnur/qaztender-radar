@@ -1,5 +1,6 @@
 import { hashPassword, readSessionFromRequest } from "../../../auth";
-import { createTenderSpecialist, listTenderSpecialists } from "../../../db";
+import { createTenderSpecialist, listTenderSpecialists, updateTelegramSubscriberStatus } from "../../../db";
+import type { TelegramSubscriberStatus } from "../../../tender-types";
 
 async function requireAdmin(request: Request) {
   const session = await readSessionFromRequest(request);
@@ -12,7 +13,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!(await requireAdmin(request))) return Response.json({ error: "Доступ запрещён" }, { status: 403 });
+  const admin = await requireAdmin(request);
+  if (!admin) return Response.json({ error: "Доступ запрещён" }, { status: 403 });
   const body = await request.json().catch(() => ({})) as { username?: unknown; password?: unknown };
   const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
   const password = typeof body.password === "string" ? body.password : "";
@@ -24,3 +26,17 @@ export async function POST(request: Request) {
     return Response.json({ error: "Не удалось создать пользователя" }, { status: 500 });
   }
 }
+
+export async function PATCH(request: Request) {
+  const admin = await requireAdmin(request);
+  if (!admin) return Response.json({ error: "Доступ запрещён" }, { status: 403 });
+  const body = await request.json().catch(() => ({})) as { userId?: unknown; status?: unknown };
+  const userId = typeof body.userId === "string" ? body.userId : "";
+  const status = typeof body.status === "string" ? body.status as TelegramSubscriberStatus : null;
+  if (!userId || !status || !["pending", "approved", "rejected", "paused"].includes(status)) {
+    return Response.json({ error: "Некорректные параметры" }, { status: 400 });
+  }
+  await updateTelegramSubscriberStatus(userId, status, admin.username);
+  return Response.json({ ok: true });
+}
+

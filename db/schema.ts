@@ -22,6 +22,8 @@ export const companyProfiles = sqliteTable("company_profiles", {
   employeeCount: integer("employee_count").notNull(),
   minBudget: integer("min_budget").notNull(),
   maxBudget: integer("max_budget").notNull(),
+  keywords: text("keywords").notNull().default("[]"),
+  negativeKeywords: text("negative_keywords").notNull().default("[]"),
   completedAt: integer("completed_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 }, (table) => [uniqueIndex("idx_company_profiles_user_id").on(table.userId)]);
@@ -137,6 +139,19 @@ export const tenderTasks = sqliteTable("tender_tasks", {
   index("idx_tender_tasks_assignee_status").on(table.assignedUserId, table.status),
 ]);
 
+export const tenderNotes = sqliteTable("tender_notes", {
+  id: text("id").primaryKey(),
+  tenderId: text("tender_id").notNull().references(() => tenders.externalId, { onDelete: "cascade" }),
+  ownerKey: text("owner_key").notNull(),
+  authorName: text("author_name").notNull(),
+  content: text("content").notNull(),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+}, (table) => [
+  index("idx_tender_notes_tender_created").on(table.tenderId, table.createdAt),
+  index("idx_tender_notes_owner").on(table.ownerKey),
+]);
+
 export const tenderSyncRuns = sqliteTable("tender_sync_runs", {
   id: text("id").primaryKey(),
   status: text("status", { enum: ["running", "succeeded", "failed"] }).notNull(),
@@ -146,3 +161,48 @@ export const tenderSyncRuns = sqliteTable("tender_sync_runs", {
   savedCount: integer("saved_count").notNull().default(0),
   errorMessage: text("error_message").notNull().default(""),
 }, (table) => [index("idx_tender_sync_runs_started_at").on(table.startedAt)]);
+
+export const telegramSubscribers = sqliteTable("telegram_subscribers", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  chatId: text("chat_id").notNull(),
+  username: text("username").notNull().default(""),
+  firstName: text("first_name").notNull().default(""),
+  status: text("status", { enum: ["pending", "approved", "rejected", "paused"] }).notNull().default("pending"),
+  requestedAt: integer("requested_at").notNull(),
+  approvedAt: integer("approved_at"),
+  approvedBy: text("approved_by"),
+  digestEnabled: integer("digest_enabled", { mode: "boolean" }).notNull().default(true),
+  instantEnabled: integer("instant_enabled", { mode: "boolean" }).notNull().default(true),
+  deadlinesEnabled: integer("deadlines_enabled", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("idx_telegram_subscribers_user_id").on(table.userId),
+  index("idx_telegram_subscribers_chat_id").on(table.chatId),
+  index("idx_telegram_subscribers_status").on(table.status),
+]);
+
+export const telegramConnectTokens = sqliteTable("telegram_connect_tokens", {
+  token: text("token").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  expiresAt: integer("expires_at").notNull(),
+  usedAt: integer("used_at"),
+}, (table) => [
+  index("idx_telegram_connect_tokens_user").on(table.userId),
+  index("idx_telegram_connect_tokens_expires").on(table.expiresAt),
+]);
+
+export const telegramDeliveries = sqliteTable("telegram_deliveries", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  chatId: text("chat_id").notNull(),
+  tenderId: text("tender_id").notNull(),
+  alertType: text("alert_type").notNull(),
+  sentAt: integer("sent_at").notNull(),
+}, (table) => [
+  index("idx_telegram_deliveries_user_tender").on(table.userId, table.tenderId),
+  index("idx_telegram_deliveries_sent_at").on(table.sentAt),
+]);
+
+

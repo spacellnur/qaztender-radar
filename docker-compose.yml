@@ -1,0 +1,19 @@
+services:
+  qaztender:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: qaztender-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - SERVER_URL=http://localhost:3000
+      - TELEGRAM_BOT_TOKEN=8719115205:AAFO6sZ6p0HN_IKFFpnDGp97fTYQ6hxTpoM
+      - ADMIN_TELEGRAM_CHAT_ID=964524397
+      - GOSZAKUP_GRAPHQL_TOKEN=e4fa77134ff8c3a936a282f42a1ad4f1
+    volumes:
+      - ./.wrangler/state:/app/.wrangler/state
+      - ./.env.local:/app/.env.local:ro

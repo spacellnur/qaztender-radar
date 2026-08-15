@@ -171,17 +171,24 @@ test("tender matching explains facts without inventing a win probability", () =>
   const profile = {
     companyName: "Компания", bin: "", regions: ["Туркестанская область"], directions: ["Строительство и ремонт"],
     constructionTypes: ["Капитальный ремонт"], licenses: "СМР II категории", experienceYears: 0, employeeCount: 0,
-    minBudget: 0, maxBudget: 100_000_000, updatedAt: 0,
+    minBudget: 0, maxBudget: 100_000_000, keywords: ["школа", "ремонт"], negativeKeywords: ["клининг"], updatedAt: 0,
   };
   const match = explainTenderMatch(tender, profile);
   assert.equal(match.status, "fits");
   assert.equal(match.label, "Подходит по известным данным");
+  assert.ok(match.matchedKeywords.includes("школа"));
+  assert.equal(match.matchedNegativeKeywords.length, 0);
   assert.ok(match.evidence.some((item) => item.kind === "unknown" && /применимость/.test(item.label)));
   assert.doesNotMatch(JSON.stringify(match), /вероятност|шанс побед/i);
 
   const outside = explainTenderMatch({ ...tender, budget: 150_000_000 }, profile);
   assert.equal(outside.status, "outside");
   assert.ok(outside.evidence.some((item) => item.kind === "negative" && /выше лимита/.test(item.label)));
+
+  const stopWordMatch = explainTenderMatch({ ...tender, title: "Капитальный ремонт школы и клининг помещений" }, profile);
+  assert.equal(stopWordMatch.status, "outside");
+  assert.ok(stopWordMatch.matchedNegativeKeywords.includes("клининг"));
+  assert.ok(stopWordMatch.evidence.some((item) => item.kind === "negative" && /стоп-слово/.test(item.label)));
 });
 
 test("tender detail endpoints are protected and validate the tender id", async () => {
@@ -205,3 +212,49 @@ test("team checklist endpoints are protected and validate administrator actions"
   });
   assert.equal(invalid.status, 400);
 });
+
+test("tender notes endpoints are protected and validate inputs", async () => {
+  const state = await loadWorker();
+  assert.equal((await request(state, "/api/tender-notes")).status, 403);
+  assert.equal((await request(state, "/api/tender-notes", { method: "POST" })).status, 403);
+  assert.equal((await request(state, "/api/tender-notes?id=example", { method: "DELETE" })).status, 403);
+
+  const cookie = await adminCookie(state);
+  const missingTender = await request(state, "/api/tender-notes", { headers: { cookie } });
+  assert.equal(missingTender.status, 400);
+
+  const emptyPost = await request(state, "/api/tender-notes", {
+    method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify({}),
+  });
+  assert.equal(emptyPost.status, 400);
+
+  const missingDelete = await request(state, "/api/tender-notes", { method: "DELETE", headers: { cookie } });
+  assert.equal(missingDelete.status, 400);
+});
+
+test("telegram connection and recommendation endpoints are protected", async () => {
+  const state = await loadWorker();
+  assert.equal((await request(state, "/api/telegram/status")).status, 401);
+  assert.equal((await request(state, "/api/telegram/status", { method: "POST" })).status, 401);
+  assert.equal((await request(state, "/api/telegram/test", { method: "POST" })).status, 401);
+  assert.equal((await request(state, "/api/telegram/recommend", { method: "POST" })).status, 403);
+
+  const cookie = await adminCookie(state);
+  const statusRes = await request(state, "/api/telegram/status", { headers: { cookie } });
+  assert.equal(statusRes.status, 200);
+
+  const connectRes = await request(state, "/api/telegram/status", { method: "POST", headers: { cookie } });
+  assert.equal(connectRes.status, 200);
+  const connectData = await connectRes.json();
+  assert.ok(connectData.token.startsWith("tg_"));
+  assert.ok(connectData.connectUrl.includes("t.me/QazTendeRadar_bot"));
+
+  const invalidRecommend = await request(state, "/api/telegram/recommend", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({}),
+  });
+  assert.equal(invalidRecommend.status, 400);
+});
+
+

@@ -1,3 +1,4 @@
+import type { ChecklistTemplateType } from "../../tender-types";
 import { readSessionFromRequest, sessionOwnerKey } from "../../auth";
 import { createTenderTask, deleteTenderTask, getTenderTask, getTenderTaskWorkspace, seedTenderTaskTemplate, tenderExists, updateTenderTask } from "../../db";
 
@@ -15,14 +16,16 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const session = await readSessionFromRequest(request);
-  if (!session || session.role !== "super_admin") return Response.json({ error: "Доступ запрещён" }, { status: 403 });
+  if (!session) return Response.json({ error: "Доступ запрещён" }, { status: 403 });
   const body = await request.json().catch(() => ({})) as Record<string, unknown>;
   const tenderId = typeof body.tenderId === "string" ? body.tenderId.trim() : "";
   const action = body.action;
   if (!tenderId || (action !== "seed" && action !== "create")) return Response.json({ error: "Проверьте тендер и действие" }, { status: 400 });
   try {
-    if (action === "seed") await seedTenderTaskTemplate(tenderId, sessionOwnerKey(session));
-    else {
+    if (action === "seed") {
+      const templateType = typeof body.templateType === "string" ? body.templateType as ChecklistTemplateType : undefined;
+      await seedTenderTaskTemplate(tenderId, sessionOwnerKey(session), templateType);
+    } else {
       const title = typeof body.title === "string" ? body.title.trim().replace(/\s+/g, " ") : "";
       if (!title || title.length > 140) return Response.json({ error: "Введите название задачи до 140 символов" }, { status: 400 });
       await createTenderTask(tenderId, title, sessionOwnerKey(session));
@@ -51,8 +54,6 @@ export async function PUT(request: Request) {
   if (session.role === "super_admin") {
     assignedUserId = typeof body.assignedUserId === "string" ? body.assignedUserId.trim() : existing.assignedUserId;
     dueAt = body.dueAt === null ? null : typeof body.dueAt === "number" && Number.isFinite(body.dueAt) ? body.dueAt : existing.dueAt;
-  } else if (!session.userId || existing.assignedUserId !== session.userId) {
-    return Response.json({ error: "Можно отмечать только назначенные вам задачи" }, { status: 403 });
   }
   try {
     await updateTenderTask(id, status, assignedUserId, dueAt);
@@ -65,9 +66,10 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   const session = await readSessionFromRequest(request);
-  if (!session || session.role !== "super_admin") return Response.json({ error: "Доступ запрещён" }, { status: 403 });
+  if (!session) return Response.json({ error: "Доступ запрещён" }, { status: 403 });
   const id = idFrom(request, "id");
   if (!id) return Response.json({ error: "Укажите задачу" }, { status: 400 });
   try { return await deleteTenderTask(id) ? Response.json({ ok: true }) : Response.json({ error: "Задача не найдена" }, { status: 404 }); }
   catch { return Response.json({ error: "Не удалось удалить задачу" }, { status: 500 }); }
 }
+

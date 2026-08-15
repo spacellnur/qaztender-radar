@@ -37,6 +37,8 @@ export default function CompanyForm({ username, initialProfile, editing = false 
   const [selectedRegions, setSelectedRegions] = useState<string[]>(initialProfile?.regions ?? []);
   const [selectedActivities, setSelectedActivities] = useState<string[]>(() => activities.filter((activity) => initialProfile?.directions.includes(activity.label)).map((activity) => activity.id));
   const [selectedConstruction, setSelectedConstruction] = useState<string[]>(initialProfile?.constructionTypes ?? []);
+  const [keywordsText, setKeywordsText] = useState(initialProfile?.keywords?.join(", ") ?? "");
+  const [negativeKeywordsText, setNegativeKeywordsText] = useState(initialProfile?.negativeKeywords?.join(", ") ?? "");
   const [unlimitedBudget, setUnlimitedBudget] = useState(initialProfile?.maxBudget === -1);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
@@ -68,6 +70,8 @@ export default function CompanyForm({ username, initialProfile, editing = false 
     setError("");
     const form = new FormData(event.currentTarget);
     const selectedLabels = activities.filter((item) => selectedActivities.includes(item.id)).map((item) => item.label);
+    const parsedKeywords = keywordsText.split(",").map((k) => k.trim()).filter(Boolean);
+    const parsedNegativeKeywords = negativeKeywordsText.split(",").map((k) => k.trim()).filter(Boolean);
     const payload = {
       companyName: form.get("companyName"),
       bin: form.get("bin"),
@@ -78,6 +82,8 @@ export default function CompanyForm({ username, initialProfile, editing = false 
       employeeCount: form.get("employeeCount") || 0,
       minBudget: 0,
       maxBudget: unlimitedBudget ? -1 : form.get("maxBudget"),
+      keywords: JSON.stringify(parsedKeywords),
+      negativeKeywords: JSON.stringify(parsedNegativeKeywords),
     };
     const response = await fetch("/api/company-profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const result = await response.json();
@@ -128,6 +134,28 @@ export default function CompanyForm({ username, initialProfile, editing = false 
               {constructionTypes.map((type) => <ChoiceButton key={type} active={selectedConstruction.includes(type)} onClick={() => toggle(type, selectedConstruction, setSelectedConstruction)}>{type}</ChoiceButton>)}
             </div>
           </fieldset>}
+
+          <fieldset className="wide choice-fieldset keywords-fieldset">
+            <legend>Ключевые слова профиля <small>необязательно</small></legend>
+            <p>Тендеры, содержащие эти слова или фразы в названии или лотах, будут приоритетно выделяться как подходящие (через запятую).</p>
+            <textarea
+              value={keywordsText}
+              onChange={(event) => setKeywordsText(event.target.value)}
+              placeholder="Например: капитальный ремонт, благоустройство, монтаж вентиляции, видеонаблюдение"
+              rows={2}
+            />
+          </fieldset>
+
+          <fieldset className="wide choice-fieldset negative-keywords-fieldset">
+            <legend>Стоп-слова (минус-слова) <small>необязательно</small></legend>
+            <p>Тендеры с этими словами будут автоматически помечаться как «Вне профиля» или исключаться из выдачи (через запятую).</p>
+            <textarea
+              value={negativeKeywordsText}
+              onChange={(event) => setNegativeKeywordsText(event.target.value)}
+              placeholder="Например: проектные работы, авторский надзор, снос, клининг, питание"
+              rows={2}
+            />
+          </fieldset>
 
           <label className="wide">Лицензии и категории <small>необязательно — можно заполнить позже</small><textarea name="licenses" placeholder="Например: СМР II категории" defaultValue={initialProfile?.licenses ?? ""} /></label>
           <label>Количество сотрудников <small>необязательно</small><input name="employeeCount" type="number" min="1" placeholder="Например, 35" defaultValue={initialProfile?.employeeCount || ""} /></label>

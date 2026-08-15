@@ -28,7 +28,14 @@ const SESSION_LIFETIME_SECONDS = 60 * 60 * 12;
 const encoder = new TextEncoder();
 
 function runtimeEnv(): RuntimeEnv {
-  return globalThis.__QAZTENDER_ENV ?? process.env;
+  const qazEnv = globalThis.__QAZTENDER_ENV;
+  return {
+    DB: qazEnv?.DB,
+    ADMIN_USERNAME: (qazEnv?.ADMIN_USERNAME || process.env.ADMIN_USERNAME || "").trim(),
+    ADMIN_PASSWORD_HASH: (qazEnv?.ADMIN_PASSWORD_HASH || process.env.ADMIN_PASSWORD_HASH || "").trim(),
+    SESSION_SECRET: (qazEnv?.SESSION_SECRET || process.env.SESSION_SECRET || "").trim(),
+    GOSZAKUP_API_TOKEN: (qazEnv?.GOSZAKUP_API_TOKEN || process.env.GOSZAKUP_API_TOKEN || "").trim(),
+  };
 }
 
 function encodeBase64Url(bytes: Uint8Array): string {
@@ -61,9 +68,22 @@ async function signature(payload: string, secret: string): Promise<string> {
   return encodeBase64Url(new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(payload))));
 }
 
+function normalizeHash(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("b64:")) {
+    try {
+      return atob(trimmed.slice(4));
+    } catch {
+      return trimmed;
+    }
+  }
+  return trimmed;
+}
+
 export async function verifyPassword(password: string, encodedHash: string): Promise<boolean> {
-  if (!password) return false;
-  const parts = encodedHash.split("$");
+  if (!password || !encodedHash) return false;
+  const normalized = normalizeHash(encodedHash);
+  const parts = normalized.split("$");
   if (parts.length !== 4 || parts[0] !== "pbkdf2_sha256") return false;
   const iterations = Number(parts[1]);
   if (!Number.isSafeInteger(iterations) || iterations < 100_000) return false;
@@ -79,9 +99,13 @@ export async function verifyPassword(password: string, encodedHash: string): Pro
 
 export async function verifyAdminCredentials(username: string, password: string): Promise<boolean> {
   const env = runtimeEnv();
-  if (!env.ADMIN_USERNAME || !env.ADMIN_PASSWORD_HASH) return false;
-  const usernameMatches = constantTimeEqual(encoder.encode(username), encoder.encode(env.ADMIN_USERNAME));
-  return usernameMatches && await verifyPassword(password, env.ADMIN_PASSWORD_HASH);
+  const adminUser = (env.ADMIN_USERNAME || "").trim();
+  const adminHash = (env.ADMIN_PASSWORD_HASH || "").trim();
+  if (!adminUser || !adminHash) return false;
+  const cleanUser = (username || "").trim();
+  if (cleanUser.length !== adminUser.length) return false;
+  const usernameMatches = constantTimeEqual(encoder.encode(cleanUser), encoder.encode(adminUser));
+  return usernameMatches && await verifyPassword(password, adminHash);
 }
 
 export async function hashPassword(password: string): Promise<string> {

@@ -1,7 +1,294 @@
 import type { AppRole } from "./auth";
-import type { AlertFrequency, CompanyProfile, SavedSearch, TaskTeamMember, TenderDetails, TenderDocument, TenderLot, TenderRecord, TenderSearchFilters, TenderSourceStatus, TenderStage, TenderTask, TenderTaskWorkspace, TenderWorkflowEntry } from "./tender-types";
+import type { AlertFrequency, ChecklistTemplateType, CompanyProfile, SavedSearch, TaskTeamMember, TelegramSubscriber, TelegramSubscriberStatus, TenderDetails, TenderDocument, TenderLot, TenderNote, TenderRecord, TenderSearchFilters, TenderSourceStatus, TenderStage, TenderTask, TenderTaskWorkspace, TenderWorkflowEntry } from "./tender-types";
 
 export type DatabaseUser = { id: string; username: string; passwordHash: string; role: AppRole; isActive: number };
+
+const SCHEMA_STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS users (
+    id text PRIMARY KEY NOT NULL,
+    username text NOT NULL,
+    password_hash text NOT NULL,
+    role text NOT NULL,
+    is_active integer DEFAULT 1 NOT NULL,
+    created_at integer NOT NULL,
+    updated_at integer NOT NULL
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (username)`,
+  `CREATE TABLE IF NOT EXISTS company_profiles (
+    id text PRIMARY KEY NOT NULL,
+    user_id text NOT NULL,
+    company_name text NOT NULL,
+    bin DEFAULT '' NOT NULL,
+    regions text DEFAULT '[]' NOT NULL,
+    directions text DEFAULT '[]' NOT NULL,
+    construction_types text DEFAULT '[]' NOT NULL,
+    licenses text DEFAULT '' NOT NULL,
+    experience_years integer DEFAULT 0 NOT NULL,
+    employee_count integer DEFAULT 0 NOT NULL,
+    min_budget integer DEFAULT 0 NOT NULL,
+    max_budget integer DEFAULT 0 NOT NULL,
+    keywords text DEFAULT '[]' NOT NULL,
+    negative_keywords text DEFAULT '[]' NOT NULL,
+    created_at integer NOT NULL,
+    updated_at integer NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE NO ACTION ON DELETE CASCADE
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_company_profiles_user_id ON company_profiles (user_id)`,
+  `CREATE TABLE IF NOT EXISTS tenders (
+    external_id text PRIMARY KEY NOT NULL,
+    number_anno text NOT NULL,
+    title text NOT NULL,
+    buyer text NOT NULL,
+    customer_bin text DEFAULT '' NOT NULL,
+    region_code text NOT NULL,
+    region_name text NOT NULL,
+    subject_type_id integer NOT NULL,
+    subject_type text NOT NULL,
+    method_id integer NOT NULL,
+    method_name text NOT NULL,
+    budget integer NOT NULL,
+    start_date integer,
+    end_date integer,
+    publish_date integer,
+    is_construction_work integer NOT NULL,
+    status_id integer NOT NULL,
+    status_name text NOT NULL,
+    kato text DEFAULT '[]' NOT NULL,
+    system_id integer NOT NULL,
+    source_url text NOT NULL,
+    upstream_updated_at text NOT NULL,
+    fetched_at integer NOT NULL,
+    updated_at integer NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_tenders_region ON tenders (region_code)`,
+  `CREATE INDEX IF NOT EXISTS idx_tenders_budget ON tenders (budget)`,
+  `CREATE INDEX IF NOT EXISTS idx_tenders_end_date ON tenders (end_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_tenders_publish_date ON tenders (publish_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_tenders_subject_type ON tenders (subject_type)`,
+  `CREATE TABLE IF NOT EXISTS tender_workflow (
+    id text PRIMARY KEY NOT NULL,
+    tender_id text NOT NULL,
+    owner_key text NOT NULL,
+    stage text DEFAULT 'none' NOT NULL,
+    is_favorite integer DEFAULT 0 NOT NULL,
+    created_at integer NOT NULL,
+    updated_at integer NOT NULL,
+    FOREIGN KEY (tender_id) REFERENCES tenders(external_id) ON UPDATE NO ACTION ON DELETE CASCADE
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_tender_workflow_owner_tender ON tender_workflow (owner_key, tender_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_tender_workflow_stage ON tender_workflow (owner_key, stage)`,
+  `CREATE INDEX IF NOT EXISTS idx_tender_workflow_favorite ON tender_workflow (owner_key, is_favorite)`,
+  `CREATE TABLE IF NOT EXISTS saved_searches (
+    id text PRIMARY KEY NOT NULL,
+    user_id text NOT NULL,
+    name text NOT NULL,
+    filters text NOT NULL,
+    alert_frequency text DEFAULT 'off' NOT NULL,
+    created_at integer NOT NULL,
+    updated_at integer NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE NO ACTION ON DELETE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_saved_searches_user_id ON saved_searches (user_id)`,
+  `CREATE TABLE IF NOT EXISTS tender_lots (
+    external_id text PRIMARY KEY NOT NULL,
+    tender_id text NOT NULL,
+    lot_number text NOT NULL,
+    title text NOT NULL,
+    description text DEFAULT '' NOT NULL,
+    amount integer NOT NULL,
+    quantity integer DEFAULT 0 NOT NULL,
+    status_name text NOT NULL,
+    enstru_ids text DEFAULT '[]' NOT NULL,
+    delivery_kato text DEFAULT '[]' NOT NULL,
+    updated_at integer NOT NULL,
+    FOREIGN KEY (tender_id) REFERENCES tenders(external_id) ON UPDATE NO ACTION ON DELETE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_tender_lots_tender_id ON tender_lots (tender_id)`,
+  `CREATE TABLE IF NOT EXISTS tender_documents (
+    external_id text PRIMARY KEY NOT NULL,
+    tender_id text NOT NULL,
+    lot_id text DEFAULT '' NOT NULL,
+    name text NOT NULL,
+    original_name text DEFAULT '' NOT NULL,
+    url text NOT NULL,
+    updated_at integer NOT NULL,
+    FOREIGN KEY (tender_id) REFERENCES tenders(external_id) ON UPDATE NO ACTION ON DELETE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_tender_documents_tender_id ON tender_documents (tender_id)`,
+  `CREATE TABLE IF NOT EXISTS tender_changes (
+    id text PRIMARY KEY NOT NULL,
+    tender_id text NOT NULL,
+    action text NOT NULL,
+    title text NOT NULL,
+    changed_at integer NOT NULL,
+    FOREIGN KEY (tender_id) REFERENCES tenders(external_id) ON UPDATE NO ACTION ON DELETE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_tender_changes_tender_id ON tender_changes (tender_id, changed_at)`,
+  `CREATE TABLE IF NOT EXISTS tender_sync_runs (
+    id text PRIMARY KEY NOT NULL,
+    status text NOT NULL,
+    started_at integer NOT NULL,
+    finished_at integer,
+    fetched_count integer DEFAULT 0 NOT NULL,
+    saved_count integer DEFAULT 0 NOT NULL,
+    error_message text DEFAULT '' NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_tender_sync_runs_started_at ON tender_sync_runs (started_at)`,
+  `CREATE TABLE IF NOT EXISTS tender_tasks (
+    id text PRIMARY KEY NOT NULL,
+    tender_id text NOT NULL,
+    title text NOT NULL,
+    status text DEFAULT 'todo' NOT NULL,
+    assigned_user_id text,
+    due_at integer,
+    sort_order integer DEFAULT 0 NOT NULL,
+    created_by_owner_key text NOT NULL,
+    created_at integer NOT NULL,
+    updated_at integer NOT NULL,
+    FOREIGN KEY (tender_id) REFERENCES tenders(external_id) ON UPDATE NO ACTION ON DELETE CASCADE,
+    FOREIGN KEY (assigned_user_id) REFERENCES users(id) ON UPDATE NO ACTION ON DELETE SET NULL
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_tender_tasks_tender_title ON tender_tasks (tender_id, title)`,
+  `CREATE INDEX IF NOT EXISTS idx_tender_tasks_tender_sort ON tender_tasks (tender_id, sort_order)`,
+  `CREATE INDEX IF NOT EXISTS idx_tender_tasks_assignee_status ON tender_tasks (assigned_user_id, status)`,
+  `CREATE TABLE IF NOT EXISTS tender_notes (
+    id text PRIMARY KEY NOT NULL,
+    tender_id text NOT NULL,
+    owner_key text NOT NULL,
+    author_name text NOT NULL,
+    content text NOT NULL,
+    created_at integer NOT NULL,
+    updated_at integer NOT NULL,
+    FOREIGN KEY (tender_id) REFERENCES tenders(external_id) ON UPDATE NO ACTION ON DELETE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_tender_notes_tender_created ON tender_notes (tender_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_tender_notes_owner ON tender_notes (owner_key)`,
+  `CREATE TABLE IF NOT EXISTS telegram_subscribers (
+    id text PRIMARY KEY NOT NULL,
+    user_id text NOT NULL,
+    chat_id text NOT NULL,
+    username text DEFAULT '' NOT NULL,
+    first_name text DEFAULT '' NOT NULL,
+    status text DEFAULT 'pending' NOT NULL,
+    requested_at integer NOT NULL,
+    approved_at integer,
+    approved_by text,
+    digest_enabled integer DEFAULT 1 NOT NULL,
+    instant_enabled integer DEFAULT 1 NOT NULL,
+    deadlines_enabled integer DEFAULT 1 NOT NULL,
+    created_at integer NOT NULL,
+    updated_at integer NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE NO ACTION ON DELETE CASCADE
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_telegram_subscribers_user_id ON telegram_subscribers (user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_telegram_subscribers_chat_id ON telegram_subscribers (chat_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_telegram_subscribers_status ON telegram_subscribers (status)`,
+  `CREATE TABLE IF NOT EXISTS telegram_connect_tokens (
+    token text PRIMARY KEY NOT NULL,
+    user_id text NOT NULL,
+    expires_at integer NOT NULL,
+    used_at integer,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE NO ACTION ON DELETE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_telegram_connect_tokens_user ON telegram_connect_tokens (user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_telegram_connect_tokens_expires ON telegram_connect_tokens (expires_at)`,
+  `CREATE TABLE IF NOT EXISTS telegram_deliveries (
+    id text PRIMARY KEY NOT NULL,
+    user_id text NOT NULL,
+    chat_id text NOT NULL,
+    tender_id text NOT NULL,
+    alert_type text NOT NULL,
+    sent_at integer NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_telegram_deliveries_user_tender ON telegram_deliveries (user_id, tender_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_telegram_deliveries_sent_at ON telegram_deliveries (sent_at)`,
+  `CREATE TABLE IF NOT EXISTS telegram_filters (
+    chat_id text PRIMARY KEY NOT NULL,
+    user_id text DEFAULT '' NOT NULL,
+    locality text DEFAULT 'turkestan_cluster' NOT NULL,
+    subject text DEFAULT 'all' NOT NULL,
+    construction_only integer DEFAULT 0 NOT NULL,
+    max_budget integer DEFAULT 0 NOT NULL,
+    keywords text DEFAULT '[]' NOT NULL,
+    updated_at integer NOT NULL
+  )`
+];
+
+let schemaPromise: Promise<void> | null = null;
+
+async function ensureSchema(binding: D1Database): Promise<void> {
+  if (schemaPromise) return schemaPromise;
+  schemaPromise = (async () => {
+    for (const statement of SCHEMA_STATEMENTS) {
+      try {
+        await binding.prepare(statement).run();
+      } catch {
+        void 0;
+      }
+    }
+    try {
+      await binding.prepare("SELECT user_id FROM telegram_subscribers LIMIT 1").run();
+    } catch {
+      try {
+        await binding.prepare("DROP TABLE IF EXISTS telegram_subscribers").run();
+        await binding.prepare(`CREATE TABLE telegram_subscribers (
+          id text PRIMARY KEY NOT NULL,
+          user_id text NOT NULL,
+          chat_id text NOT NULL,
+          username text DEFAULT '' NOT NULL,
+          first_name text DEFAULT '' NOT NULL,
+          status text DEFAULT 'pending' NOT NULL,
+          requested_at integer NOT NULL,
+          approved_at integer,
+          approved_by text,
+          digest_enabled integer DEFAULT 1 NOT NULL,
+          instant_enabled integer DEFAULT 1 NOT NULL,
+          deadlines_enabled integer DEFAULT 1 NOT NULL,
+          created_at integer NOT NULL,
+          updated_at integer NOT NULL,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )`).run();
+      } catch {
+        void 0;
+      }
+    }
+    try {
+      await binding.prepare("SELECT user_id FROM telegram_connect_tokens LIMIT 1").run();
+    } catch {
+      try {
+        await binding.prepare("DROP TABLE IF EXISTS telegram_connect_tokens").run();
+        await binding.prepare(`CREATE TABLE telegram_connect_tokens (
+          token text PRIMARY KEY NOT NULL,
+          user_id text NOT NULL,
+          expires_at integer NOT NULL,
+          used_at integer,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )`).run();
+      } catch {
+        void 0;
+      }
+    }
+    try {
+      await binding.prepare(`ALTER TABLE company_profiles ADD COLUMN keywords text DEFAULT '[]' NOT NULL`).run();
+    } catch {
+      void 0;
+    }
+    try {
+      await binding.prepare(`ALTER TABLE company_profiles ADD COLUMN negative_keywords text DEFAULT '[]' NOT NULL`).run();
+    } catch {
+      void 0;
+    }
+  })();
+  return schemaPromise;
+}
+
+async function getDb(): Promise<D1Database | null> {
+  const binding = globalThis.__QAZTENDER_ENV?.DB ?? null;
+  if (binding) {
+    await ensureSchema(binding);
+  }
+  return binding;
+}
 
 function db(): D1Database | null {
   return globalThis.__QAZTENDER_ENV?.DB ?? null;
@@ -10,15 +297,53 @@ function db(): D1Database | null {
 export function hasDatabase(): boolean { return db() !== null; }
 
 export async function findUserByUsername(username: string): Promise<DatabaseUser | null> {
-  return (await db()?.prepare("SELECT id, username, password_hash AS passwordHash, role, is_active AS isActive FROM users WHERE username = ? LIMIT 1").bind(username).first<DatabaseUser>()) ?? null;
+  const binding = await getDb();
+  return (await binding?.prepare("SELECT id, username, password_hash AS passwordHash, role, is_active AS isActive FROM users WHERE username = ? LIMIT 1").bind(username).first<DatabaseUser>()) ?? null;
+}
+
+export async function getDbUserById(id: string): Promise<DatabaseUser | null> {
+  const binding = await getDb();
+  return (await binding?.prepare("SELECT id, username, password_hash AS passwordHash, role, is_active AS isActive FROM users WHERE id = ? LIMIT 1").bind(id).first<DatabaseUser>()) ?? null;
+}
+
+export async function getTenderById(externalId: string): Promise<TenderRecord | null> {
+  const binding = await getDb();
+  if (!binding) return null;
+  return (await binding.prepare(`SELECT
+      external_id AS externalId, number_anno AS numberAnno, title, buyer, customer_bin AS customerBin,
+      region_code AS regionCode, region_name AS regionName, subject_type_id AS subjectTypeId,
+      subject_type AS subjectType, method_id AS methodId, method_name AS methodName, budget,
+      start_date AS startDate, end_date AS endDate, publish_date AS publishDate,
+      is_construction_work AS isConstructionWork, status_id AS statusId, status_name AS statusName,
+      kato, system_id AS systemId, source_url AS sourceUrl, upstream_updated_at AS upstreamUpdatedAt,
+      fetched_at AS fetchedAt, updated_at AS updatedAt
+    FROM tenders WHERE external_id = ? LIMIT 1`).bind(externalId).first<TenderRecord>()) ?? null;
 }
 
 export async function listTenderSpecialists() {
-  return (await db()?.prepare("SELECT u.id, u.username, u.is_active AS isActive, u.created_at AS createdAt, CASE WHEN p.user_id IS NULL THEN 0 ELSE 1 END AS profileComplete, p.company_name AS companyName FROM users u LEFT JOIN company_profiles p ON p.user_id = u.id ORDER BY u.created_at DESC").all())?.results ?? [];
+  const binding = await getDb();
+  return (await binding?.prepare(`
+    SELECT u.id, u.username, u.is_active AS isActive, u.created_at AS createdAt,
+      CASE WHEN p.user_id IS NULL THEN 0 ELSE 1 END AS profileComplete,
+      p.company_name AS companyName,
+      ts.status AS telegramStatus,
+      ts.username AS telegramUsername,
+      ts.chat_id AS telegramChatId
+    FROM users u
+    LEFT JOIN company_profiles p ON p.user_id = u.id
+    LEFT JOIN telegram_subscribers ts ON ts.user_id = u.id
+    ORDER BY u.created_at DESC
+  `).all<{
+    id: string; username: string; isActive: number; createdAt: number;
+    profileComplete: number; companyName: string | null;
+    telegramStatus: TelegramSubscriberStatus | null;
+    telegramUsername: string | null;
+    telegramChatId: string | null;
+  }>())?.results ?? [];
 }
 
 export async function createTenderSpecialist(username: string, passwordHash: string) {
-  const binding = db();
+  const binding = await getDb();
   if (!binding) throw new Error("Database is unavailable");
   const now = Date.now();
   const id = crypto.randomUUID();
@@ -27,20 +352,27 @@ export async function createTenderSpecialist(username: string, passwordHash: str
 }
 
 export async function companyProfileExists(userId: string): Promise<boolean> {
-  return Boolean(await db()?.prepare("SELECT 1 AS present FROM company_profiles WHERE user_id = ? LIMIT 1").bind(userId).first());
+  const binding = await getDb();
+  return Boolean(await binding?.prepare("SELECT 1 AS present FROM company_profiles WHERE user_id = ? LIMIT 1").bind(userId).first());
 }
 
 export async function getCompanyProfile(userId: string): Promise<CompanyProfile | null> {
-  const row = await db()?.prepare(`SELECT company_name AS companyName, bin, regions, work_categories AS workCategories, licenses,
-    experience_years AS experienceYears, employee_count AS employeeCount, min_budget AS minBudget, max_budget AS maxBudget, updated_at AS updatedAt
+  const binding = await getDb();
+  const row = await binding?.prepare(`SELECT company_name AS companyName, bin, regions, work_categories AS workCategories, licenses,
+    experience_years AS experienceYears, employee_count AS employeeCount, min_budget AS minBudget, max_budget AS maxBudget,
+    COALESCE(keywords, '[]') AS keywords, COALESCE(negative_keywords, '[]') AS negativeKeywords,
+    updated_at AS updatedAt
     FROM company_profiles WHERE user_id = ? LIMIT 1`).bind(userId).first<{
       companyName: string; bin: string; regions: string; workCategories: string; licenses: string;
-      experienceYears: number; employeeCount: number; minBudget: number; maxBudget: number; updatedAt: number;
+      experienceYears: number; employeeCount: number; minBudget: number; maxBudget: number;
+      keywords: string; negativeKeywords: string; updatedAt: number;
     }>();
   if (!row) return null;
   try {
     const regions = JSON.parse(row.regions) as unknown;
     const categories = JSON.parse(row.workCategories) as { directions?: unknown; construction?: unknown };
+    const keywords = JSON.parse(row.keywords) as unknown;
+    const negativeKeywords = JSON.parse(row.negativeKeywords) as unknown;
     return {
       companyName: row.companyName,
       bin: row.bin,
@@ -48,23 +380,29 @@ export async function getCompanyProfile(userId: string): Promise<CompanyProfile 
       directions: Array.isArray(categories.directions) ? categories.directions.filter((item): item is string => typeof item === "string") : [],
       constructionTypes: Array.isArray(categories.construction) ? categories.construction.filter((item): item is string => typeof item === "string") : [],
       licenses: row.licenses,
-      experienceYears: Number(row.experienceYears), employeeCount: Number(row.employeeCount), minBudget: Number(row.minBudget), maxBudget: Number(row.maxBudget), updatedAt: Number(row.updatedAt),
+      experienceYears: Number(row.experienceYears),
+      employeeCount: Number(row.employeeCount),
+      minBudget: Number(row.minBudget),
+      maxBudget: Number(row.maxBudget),
+      keywords: Array.isArray(keywords) ? keywords.filter((item): item is string => typeof item === "string") : [],
+      negativeKeywords: Array.isArray(negativeKeywords) ? negativeKeywords.filter((item): item is string => typeof item === "string") : [],
+      updatedAt: Number(row.updatedAt),
     };
   } catch { return null; }
 }
 
 export async function saveCompanyProfile(userId: string, profile: Record<string, string | number>) {
-  const binding = db();
+  const binding = await getDb();
   if (!binding) throw new Error("Database is unavailable");
   const now = Date.now();
-  await binding.prepare(`INSERT INTO company_profiles (id, user_id, company_name, bin, regions, work_categories, licenses, experience_years, employee_count, min_budget, max_budget, completed_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(user_id) DO UPDATE SET company_name=excluded.company_name, bin=excluded.bin, regions=excluded.regions, work_categories=excluded.work_categories, licenses=excluded.licenses, experience_years=excluded.experience_years, employee_count=excluded.employee_count, min_budget=excluded.min_budget, max_budget=excluded.max_budget, updated_at=excluded.updated_at`)
-    .bind(crypto.randomUUID(), userId, profile.companyName, profile.bin, profile.regions, profile.workCategories, profile.licenses, profile.experienceYears, profile.employeeCount, profile.minBudget, profile.maxBudget, now, now).run();
+  await binding.prepare(`INSERT INTO company_profiles (id, user_id, company_name, bin, regions, work_categories, licenses, experience_years, employee_count, min_budget, max_budget, keywords, negative_keywords, completed_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET company_name=excluded.company_name, bin=excluded.bin, regions=excluded.regions, work_categories=excluded.work_categories, licenses=excluded.licenses, experience_years=excluded.experience_years, employee_count=excluded.employee_count, min_budget=excluded.min_budget, max_budget=excluded.max_budget, keywords=excluded.keywords, negative_keywords=excluded.negative_keywords, updated_at=excluded.updated_at`)
+    .bind(crypto.randomUUID(), userId, profile.companyName, profile.bin, profile.regions, profile.workCategories, profile.licenses, profile.experienceYears, profile.employeeCount, profile.minBudget, profile.maxBudget, profile.keywords ?? "[]", profile.negativeKeywords ?? "[]", now, now).run();
 }
 
 export async function listTenders(limit = 500): Promise<TenderRecord[]> {
-  const binding = db();
+  const binding = await getDb();
   if (!binding) return [];
   const result = await binding.prepare(`SELECT
       external_id AS externalId, number_anno AS numberAnno, title, buyer,
@@ -82,7 +420,7 @@ export async function listTenders(limit = 500): Promise<TenderRecord[]> {
 }
 
 export async function listTenderWorkflow(ownerKey: string): Promise<TenderWorkflowEntry[]> {
-  const binding = db();
+  const binding = await getDb();
   if (!binding) return [];
   const result = await binding.prepare(`SELECT tender_id AS tenderId, is_favorite AS isFavorite, stage, updated_at AS updatedAt
     FROM tender_workflow WHERE owner_key = ? ORDER BY updated_at DESC`).bind(ownerKey).all<TenderWorkflowEntry>();
@@ -90,7 +428,7 @@ export async function listTenderWorkflow(ownerKey: string): Promise<TenderWorkfl
 }
 
 export async function saveTenderWorkflow(ownerKey: string, tenderId: string, isFavorite: boolean, stage: TenderStage): Promise<TenderWorkflowEntry | null> {
-  const binding = db();
+  const binding = await getDb();
   if (!binding) throw new Error("Database is unavailable");
   const tender = await binding.prepare("SELECT 1 AS present FROM tenders WHERE external_id = ? LIMIT 1").bind(tenderId).first();
   if (!tender) throw new Error("Tender not found");
@@ -107,7 +445,7 @@ export async function saveTenderWorkflow(ownerKey: string, tenderId: string, isF
 }
 
 export async function listSavedSearches(ownerKey: string): Promise<SavedSearch[]> {
-  const binding = db();
+  const binding = await getDb();
   if (!binding) return [];
   const result = await binding.prepare(`SELECT id, name, filters, alert_frequency AS alertFrequency, created_at AS createdAt, updated_at AS updatedAt
     FROM saved_searches WHERE owner_key = ? ORDER BY updated_at DESC`).bind(ownerKey).all<Omit<SavedSearch, "filters"> & { filters: string }>();
@@ -118,7 +456,7 @@ export async function listSavedSearches(ownerKey: string): Promise<SavedSearch[]
 }
 
 export async function saveSavedSearch(ownerKey: string, id: string | null, name: string, filters: TenderSearchFilters, alertFrequency: AlertFrequency): Promise<SavedSearch> {
-  const binding = db();
+  const binding = await getDb();
   if (!binding) throw new Error("Database is unavailable");
   const now = Date.now();
   const savedId = id || crypto.randomUUID();
@@ -133,14 +471,14 @@ export async function saveSavedSearch(ownerKey: string, id: string | null, name:
 }
 
 export async function deleteSavedSearch(ownerKey: string, id: string): Promise<boolean> {
-  const binding = db();
+  const binding = await getDb();
   if (!binding) throw new Error("Database is unavailable");
   const result = await binding.prepare("DELETE FROM saved_searches WHERE id = ? AND owner_key = ?").bind(id, ownerKey).run();
-  return Number(result.meta.changes ?? 0) > 0;
+  return Boolean(result?.meta?.changes);
 }
 
 export async function getTenderDetails(tenderId: string): Promise<TenderDetails> {
-  const binding = db();
+  const binding = await getDb();
   if (!binding) return { lots: [], documents: [], changes: [] };
   const [lotsResult, documentsResult, changesResult] = await Promise.all([
     binding.prepare(`SELECT external_id AS externalId, tender_id AS tenderId, lot_number AS lotNumber, title, description, status_name AS statusName,
@@ -159,11 +497,12 @@ export async function getTenderDetails(tenderId: string): Promise<TenderDetails>
 }
 
 export async function tenderExists(tenderId: string): Promise<boolean> {
-  return Boolean(await db()?.prepare("SELECT 1 AS present FROM tenders WHERE external_id = ? LIMIT 1").bind(tenderId).first());
+  const binding = await getDb();
+  return Boolean(await binding?.prepare("SELECT 1 AS present FROM tenders WHERE external_id = ? LIMIT 1").bind(tenderId).first());
 }
 
 export async function replaceTenderDetails(tenderId: string, lots: TenderLot[], documents: TenderDocument[]): Promise<void> {
-  const binding = db();
+  const binding = await getDb();
   if (!binding) throw new Error("Database is unavailable");
   if (!await tenderExists(tenderId)) throw new Error("Tender not found");
   const now = Date.now();
@@ -182,17 +521,11 @@ export async function replaceTenderDetails(tenderId: string, lots: TenderLot[], 
   await binding.batch(statements);
 }
 
-const standardTaskTitles = [
-  "Изучить лоты, техническое задание и сроки",
-  "Проверить квалификационные требования и лицензии",
-  "Подготовить расчёт цены и запросить предложения",
-  "Проверить обеспечение заявки и финансовые условия",
-  "Собрать справки, разрешения и остальные документы",
-  "Провести финальную проверку и подать заявку",
-];
+export { CHECKLIST_TEMPLATES, detectChecklistTemplate } from "./tender-templates";
+import { CHECKLIST_TEMPLATES, detectChecklistTemplate } from "./tender-templates";
 
 export async function getTenderTaskWorkspace(tenderId: string): Promise<TenderTaskWorkspace> {
-  const binding = db();
+  const binding = await getDb();
   if (!binding) return { tasks: [], members: [] };
   const [tasksResult, membersResult] = await Promise.all([
     binding.prepare(`SELECT t.id, t.tender_id AS tenderId, t.title, t.status, COALESCE(t.assigned_user_id, '') AS assignedUserId,
@@ -205,19 +538,54 @@ export async function getTenderTaskWorkspace(tenderId: string): Promise<TenderTa
   return { tasks: tasksResult.results ?? [], members: membersResult.results ?? [] };
 }
 
-export async function seedTenderTaskTemplate(tenderId: string, creatorKey: string): Promise<void> {
-  const binding = db();
+export async function seedTenderTaskTemplate(tenderId: string, creatorKey: string, templateType?: ChecklistTemplateType): Promise<void> {
+  const binding = await getDb();
   if (!binding) throw new Error("Database is unavailable");
-  if (!await tenderExists(tenderId)) throw new Error("Tender not found");
+  const tender = await binding.prepare("SELECT method_name AS methodName FROM tenders WHERE external_id = ? LIMIT 1").bind(tenderId).first<{ methodName: string }>();
+  if (!tender) throw new Error("Tender not found");
+  const key = (templateType && templateType in CHECKLIST_TEMPLATES) ? templateType : detectChecklistTemplate(tender.methodName);
+  const tasks = CHECKLIST_TEMPLATES[key].tasks;
   const now = Date.now();
-  await binding.batch(standardTaskTitles.map((title, index) => binding.prepare(`INSERT OR IGNORE INTO tender_tasks
+  await binding.batch(tasks.map((title, index) => binding.prepare(`INSERT OR IGNORE INTO tender_tasks
     (id, tender_id, title, status, assigned_user_id, due_at, sort_order, created_by_owner_key, created_at, updated_at)
     VALUES (?, ?, ?, 'todo', NULL, NULL, ?, ?, ?, ?)`)
     .bind(crypto.randomUUID(), tenderId, title, index, creatorKey, now, now)));
 }
 
+export async function listTenderNotes(tenderId: string): Promise<TenderNote[]> {
+  const binding = await getDb();
+  if (!binding) return [];
+  const result = await binding.prepare(`SELECT id, tender_id AS tenderId, owner_key AS ownerKey, author_name AS authorName, content, created_at AS createdAt, updated_at AS updatedAt
+    FROM tender_notes WHERE tender_id = ? ORDER BY created_at DESC`).bind(tenderId).all<TenderNote>();
+  return result.results ?? [];
+}
+
+export async function createTenderNote(tenderId: string, ownerKey: string, authorName: string, content: string): Promise<TenderNote> {
+  const binding = await getDb();
+  if (!binding) throw new Error("Database is unavailable");
+  if (!await tenderExists(tenderId)) throw new Error("Tender not found");
+  const now = Date.now();
+  const id = crypto.randomUUID();
+  await binding.prepare(`INSERT INTO tender_notes (id, tender_id, owner_key, author_name, content, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(id, tenderId, ownerKey, authorName, content, now, now).run();
+  return { id, tenderId, ownerKey, authorName, content, createdAt: now, updatedAt: now };
+}
+
+export async function deleteTenderNote(noteId: string, ownerKey: string, role: string): Promise<boolean> {
+  const binding = await getDb();
+  if (!binding) throw new Error("Database is unavailable");
+  const query = role === "super_admin"
+    ? "DELETE FROM tender_notes WHERE id = ?"
+    : "DELETE FROM tender_notes WHERE id = ? AND owner_key = ?";
+  const statement = role === "super_admin"
+    ? binding.prepare(query).bind(noteId)
+    : binding.prepare(query).bind(noteId, ownerKey);
+  const result = await statement.run();
+  return Number(result.meta.changes ?? 0) > 0;
+}
+
 export async function createTenderTask(tenderId: string, title: string, creatorKey: string): Promise<TenderTask> {
-  const binding = db();
+  const binding = await getDb();
   if (!binding) throw new Error("Database is unavailable");
   if (!await tenderExists(tenderId)) throw new Error("Tender not found");
   const maximum = await binding.prepare("SELECT COALESCE(MAX(sort_order), -1) AS value FROM tender_tasks WHERE tender_id = ?").bind(tenderId).first<{ value: number }>();
@@ -228,13 +596,14 @@ export async function createTenderTask(tenderId: string, title: string, creatorK
 }
 
 export async function getTenderTask(taskId: string): Promise<TenderTask | null> {
-  return (await db()?.prepare(`SELECT t.id, t.tender_id AS tenderId, t.title, t.status, COALESCE(t.assigned_user_id, '') AS assignedUserId,
+  const binding = await getDb();
+  return (await binding?.prepare(`SELECT t.id, t.tender_id AS tenderId, t.title, t.status, COALESCE(t.assigned_user_id, '') AS assignedUserId,
     COALESCE(u.username, '') AS assignedUsername, t.due_at AS dueAt, t.sort_order AS sortOrder, t.updated_at AS updatedAt
     FROM tender_tasks t LEFT JOIN users u ON u.id = t.assigned_user_id WHERE t.id = ? LIMIT 1`).bind(taskId).first<TenderTask>()) ?? null;
 }
 
 export async function updateTenderTask(taskId: string, status: "todo" | "done", assignedUserId: string, dueAt: number | null): Promise<void> {
-  const binding = db();
+  const binding = await getDb();
   if (!binding) throw new Error("Database is unavailable");
   if (assignedUserId && !await binding.prepare("SELECT 1 AS present FROM users WHERE id = ? AND role = 'tender_specialist' AND is_active = 1 LIMIT 1").bind(assignedUserId).first()) throw new Error("Assignee not found");
   await binding.prepare("UPDATE tender_tasks SET status = ?, assigned_user_id = NULLIF(?, ''), due_at = ?, updated_at = ? WHERE id = ?")
@@ -242,14 +611,14 @@ export async function updateTenderTask(taskId: string, status: "todo" | "done", 
 }
 
 export async function deleteTenderTask(taskId: string): Promise<boolean> {
-  const binding = db();
+  const binding = await getDb();
   if (!binding) throw new Error("Database is unavailable");
   const result = await binding.prepare("DELETE FROM tender_tasks WHERE id = ?").bind(taskId).run();
   return Number(result.meta.changes ?? 0) > 0;
 }
 
 export async function getTenderSourceStatus(configured: boolean): Promise<TenderSourceStatus> {
-  const binding = db();
+  const binding = await getDb();
   if (!binding) {
     return { configured, recordCount: 0, state: configured ? "ready_to_sync" : "waiting_token", lastSyncAt: null, lastSyncStatus: null, lastError: "" };
   }
@@ -270,7 +639,7 @@ export async function getTenderSourceStatus(configured: boolean): Promise<Tender
 }
 
 export async function startTenderSyncRun(): Promise<string> {
-  const binding = db();
+  const binding = await getDb();
   if (!binding) throw new Error("Database is unavailable");
   const id = crypto.randomUUID();
   await binding.prepare("INSERT INTO tender_sync_runs (id, status, started_at, fetched_count, saved_count, error_message) VALUES (?, 'running', ?, 0, 0, '')")
@@ -279,14 +648,14 @@ export async function startTenderSyncRun(): Promise<string> {
 }
 
 export async function finishTenderSyncRun(id: string, status: "succeeded" | "failed", fetchedCount: number, savedCount: number, errorMessage = "") {
-  const binding = db();
+  const binding = await getDb();
   if (!binding) throw new Error("Database is unavailable");
   await binding.prepare("UPDATE tender_sync_runs SET status = ?, finished_at = ?, fetched_count = ?, saved_count = ?, error_message = ? WHERE id = ?")
     .bind(status, Date.now(), fetchedCount, savedCount, errorMessage.slice(0, 500), id).run();
 }
 
 export async function upsertTenders(records: TenderRecord[]): Promise<number> {
-  const binding = db();
+  const binding = await getDb();
   if (!binding) throw new Error("Database is unavailable");
   if (records.length === 0) return 0;
   const sql = `INSERT INTO tenders (
@@ -319,3 +688,369 @@ export async function upsertTenders(records: TenderRecord[]): Promise<number> {
   }
   return records.length;
 }
+
+const memoryTokens = new Map<string, { userId: string; expiresAt: number; usedAt: number | null }>();
+const memorySubscribers = new Map<string, TelegramSubscriber>();
+
+export async function getTelegramSubscriberByUserId(userId: string): Promise<TelegramSubscriber | null> {
+  const binding = await getDb();
+  if (!binding) return memorySubscribers.get(userId) ?? null;
+  const row = await binding.prepare("SELECT * FROM telegram_subscribers WHERE user_id = ?").bind(userId).first<{
+    id: string; user_id: string; chat_id: string; username: string; first_name: string;
+    status: TelegramSubscriberStatus; requested_at: number; approved_at: number | null;
+    approved_by: string | null; digest_enabled: number; instant_enabled: number;
+    deadlines_enabled: number; created_at: number; updated_at: number;
+  }>();
+  if (!row) return memorySubscribers.get(userId) ?? null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    chatId: row.chat_id,
+    username: row.username,
+    firstName: row.first_name,
+    status: row.status,
+    requestedAt: row.requested_at,
+    approvedAt: row.approved_at,
+    approvedBy: row.approved_by,
+    digestEnabled: Boolean(row.digest_enabled),
+    instantEnabled: Boolean(row.instant_enabled),
+    deadlinesEnabled: Boolean(row.deadlines_enabled),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function getTelegramSubscriberByChatId(chatId: string): Promise<TelegramSubscriber | null> {
+  const binding = await getDb();
+  if (!binding) {
+    for (const sub of memorySubscribers.values()) {
+      if (sub.chatId === chatId) return sub;
+    }
+    return null;
+  }
+  const row = await binding.prepare("SELECT * FROM telegram_subscribers WHERE chat_id = ?").bind(chatId).first<{
+    id: string; user_id: string; chat_id: string; username: string; first_name: string;
+    status: TelegramSubscriberStatus; requested_at: number; approved_at: number | null;
+    approved_by: string | null; digest_enabled: number; instant_enabled: number;
+    deadlines_enabled: number; created_at: number; updated_at: number;
+  }>();
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    chatId: row.chat_id,
+    username: row.username,
+    firstName: row.first_name,
+    status: row.status,
+    requestedAt: row.requested_at,
+    approvedAt: row.approved_at,
+    approvedBy: row.approved_by,
+    digestEnabled: Boolean(row.digest_enabled),
+    instantEnabled: Boolean(row.instant_enabled),
+    deadlinesEnabled: Boolean(row.deadlines_enabled),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function createOrUpdateTelegramSubscriber(params: {
+  userId: string;
+  chatId: string;
+  username?: string;
+  firstName?: string;
+  status?: TelegramSubscriberStatus;
+}): Promise<TelegramSubscriber> {
+  const binding = await getDb();
+  const existing = await getTelegramSubscriberByUserId(params.userId);
+  const now = Date.now();
+  const id = existing?.id ?? crypto.randomUUID();
+  const username = params.username ?? existing?.username ?? "";
+  const firstName = params.firstName ?? existing?.firstName ?? "";
+  const status = params.status ?? existing?.status ?? "pending";
+  const requestedAt = existing?.requestedAt ?? now;
+  const approvedAt = status === "approved" ? (existing?.approvedAt ?? now) : existing?.approvedAt ?? null;
+  const approvedBy = existing?.approvedBy ?? null;
+
+  const subscriber: TelegramSubscriber = {
+    id,
+    userId: params.userId,
+    chatId: params.chatId,
+    username,
+    firstName,
+    status,
+    requestedAt,
+    approvedAt,
+    approvedBy,
+    digestEnabled: existing?.digestEnabled ?? true,
+    instantEnabled: existing?.instantEnabled ?? true,
+    deadlinesEnabled: existing?.deadlinesEnabled ?? true,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  };
+
+  memorySubscribers.set(params.userId, subscriber);
+
+  if (binding) {
+    await binding.prepare(`INSERT INTO telegram_subscribers (
+        id, user_id, chat_id, username, first_name, status, requested_at, approved_at,
+        approved_by, digest_enabled, instant_enabled, deadlines_enabled, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 1, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET
+        chat_id=excluded.chat_id, username=excluded.username, first_name=excluded.first_name,
+        status=excluded.status, approved_at=excluded.approved_at, updated_at=excluded.updated_at`)
+      .bind(
+        id, params.userId, params.chatId, username, firstName, status, requestedAt,
+        approvedAt, approvedBy, existing?.createdAt ?? now, now,
+      ).run();
+  }
+
+  return subscriber;
+}
+
+export async function updateTelegramSubscriberStatus(userId: string, status: TelegramSubscriberStatus, approvedBy?: string): Promise<boolean> {
+  const binding = await getDb();
+  const now = Date.now();
+  const existing = await getTelegramSubscriberByUserId(userId);
+  if (existing) {
+    existing.status = status;
+    if (status === "approved") existing.approvedAt = existing.approvedAt ?? now;
+    existing.approvedBy = approvedBy ?? existing.approvedBy;
+    existing.updatedAt = now;
+    memorySubscribers.set(userId, existing);
+  }
+
+  if (binding) {
+    const approvedAt = status === "approved" ? now : null;
+    await binding.prepare(`UPDATE telegram_subscribers SET status = ?, approved_at = COALESCE(approved_at, ?), approved_by = ?, updated_at = ? WHERE user_id = ?`)
+      .bind(status, approvedAt, approvedBy ?? null, now, userId).run();
+  }
+  return true;
+}
+
+export async function listTelegramSubscribers(): Promise<TelegramSubscriber[]> {
+  const binding = await getDb();
+  if (!binding) return Array.from(memorySubscribers.values());
+  const rows = await binding.prepare("SELECT * FROM telegram_subscribers ORDER BY created_at DESC").all<{
+    id: string; user_id: string; chat_id: string; username: string; first_name: string;
+    status: TelegramSubscriberStatus; requested_at: number; approved_at: number | null;
+    approved_by: string | null; digest_enabled: number; instant_enabled: number;
+    deadlines_enabled: number; created_at: number; updated_at: number;
+  }>();
+  return rows.results.map((row) => ({
+    id: row.id,
+    userId: row.user_id,
+    chatId: row.chat_id,
+    username: row.username,
+    firstName: row.first_name,
+    status: row.status,
+    requestedAt: row.requested_at,
+    approvedAt: row.approved_at,
+    approvedBy: row.approved_by,
+    digestEnabled: Boolean(row.digest_enabled),
+    instantEnabled: Boolean(row.instant_enabled),
+    deadlinesEnabled: Boolean(row.deadlines_enabled),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function listApprovedTelegramSubscribers(): Promise<TelegramSubscriber[]> {
+  const binding = await getDb();
+  if (!binding) return Array.from(memorySubscribers.values()).filter((s) => s.status === "approved");
+  const rows = await binding.prepare("SELECT * FROM telegram_subscribers WHERE status = 'approved'").all<{
+    id: string; user_id: string; chat_id: string; username: string; first_name: string;
+    status: TelegramSubscriberStatus; requested_at: number; approved_at: number | null;
+    approved_by: string | null; digest_enabled: number; instant_enabled: number;
+    deadlines_enabled: number; created_at: number; updated_at: number;
+  }>();
+  return rows.results.map((row) => ({
+    id: row.id,
+    userId: row.user_id,
+    chatId: row.chat_id,
+    username: row.username,
+    firstName: row.first_name,
+    status: row.status,
+    requestedAt: row.requested_at,
+    approvedAt: row.approved_at,
+    approvedBy: row.approved_by,
+    digestEnabled: Boolean(row.digest_enabled),
+    instantEnabled: Boolean(row.instant_enabled),
+    deadlinesEnabled: Boolean(row.deadlines_enabled),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function createTelegramConnectToken(userId: string): Promise<string> {
+  const token = `tg_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+  const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes
+  memoryTokens.set(token, { userId, expiresAt, usedAt: null });
+
+  const binding = await getDb();
+  if (binding) {
+    await binding.prepare("INSERT INTO telegram_connect_tokens (token, user_id, expires_at) VALUES (?, ?, ?)")
+      .bind(token, userId, expiresAt).run();
+  }
+  return token;
+}
+
+export async function consumeTelegramConnectToken(token: string): Promise<string | null> {
+  const now = Date.now();
+  const mem = memoryTokens.get(token);
+  if (mem) {
+    if (mem.usedAt || mem.expiresAt < now) return null;
+    mem.usedAt = now;
+    return mem.userId;
+  }
+
+  const binding = await getDb();
+  if (!binding) return null;
+  const row = await binding.prepare("SELECT user_id, expires_at, used_at FROM telegram_connect_tokens WHERE token = ?").bind(token).first<{
+    user_id: string; expires_at: number; used_at: number | null;
+  }>();
+  if (!row || row.used_at || row.expires_at < now) return null;
+  await binding.prepare("UPDATE telegram_connect_tokens SET used_at = ? WHERE token = ?").bind(now, token).run();
+  return row.user_id;
+}
+
+export async function recordTelegramDelivery(userId: string, chatId: string, tenderId: string, alertType: string): Promise<boolean> {
+  const binding = await getDb();
+  if (!binding) return true;
+  const id = crypto.randomUUID();
+  await binding.prepare("INSERT INTO telegram_deliveries (id, user_id, chat_id, tender_id, alert_type, sent_at) VALUES (?, ?, ?, ?, ?, ?)")
+    .bind(id, userId, chatId, tenderId, alertType, Date.now()).run();
+  return true;
+}
+
+export async function isTenderDeliveredToUser(userId: string, tenderId: string, alertType?: string): Promise<boolean> {
+  const binding = await getDb();
+  if (!binding) return false;
+  if (alertType) {
+    const row = await binding.prepare("SELECT id FROM telegram_deliveries WHERE user_id = ? AND tender_id = ? AND alert_type = ?").bind(userId, tenderId, alertType).first<{ id: string }>();
+    return Boolean(row);
+  }
+  const row = await binding.prepare("SELECT id FROM telegram_deliveries WHERE user_id = ? AND tender_id = ?").bind(userId, tenderId).first<{ id: string }>();
+  return Boolean(row);
+}
+
+export type IndustryCategory =
+  | "all"
+  | "construction"
+  | "goods"
+  | "it"
+  | "security"
+  | "cleaning"
+  | "transport"
+  | "food"
+  | "medical";
+
+export const INDUSTRY_CATEGORIES: Array<{
+  id: IndustryCategory;
+  label: string;
+  shortLabel: string;
+  keywords: string[];
+}> = [
+  { id: "all", label: "🌐 Все сферы (без ограничений)", shortLabel: "Все сферы", keywords: [] },
+  { id: "construction", label: "🏗 Строительство и ремонт", shortLabel: "Строительство", keywords: ["строит", "ремонт", "смр", "кровл", "фасад", "дорог", "асфальт", "благоустрой", "монтаж", "пко", "гаск", "здрав", "объект", "капремонт", "трубопровод", "инженерн", "фундамент"] },
+  { id: "goods", label: "📦 Товары, мебель и инвентарь", shortLabel: "Товары и мебель", keywords: ["поставк", "товар", "мебел", "стол", "стул", "шкаф", "бумаг", "канцтовар", "инвентар", "спецодежд", "хозтовар", "материал", "оборудован"] },
+  { id: "it", label: "💻 IT, оргтехника и связь", shortLabel: "IT и оргтехника", keywords: ["компьютер", "ноутбук", "оргтехник", "сервер", "программ", "софт", "видеонаблюден", "камер", "интернет", "связ", "картридж", "принтер", "мфу", "сайт", "моноблок", "коммутатор"] },
+  { id: "security", label: "🛡 Охрана и безопасность", shortLabel: "Охрана и безопасность", keywords: ["охран", "безопасност", "пожарн", "сигнализац", "скуд", "видеонаблюден", "вахтер", "пост", "мвд"] },
+  { id: "cleaning", label: "🧹 Клининг и благоустройство", shortLabel: "Клининг и уборка", keywords: ["уборк", "клининг", "дезинфекц", "мусор", "тбо", "озеленен", "посадк", "полив", "санитарн", "чистк", "мойк"] },
+  { id: "transport", label: "🚚 Транспорт, спецтехника и ГСМ", shortLabel: "Транспорт и ГСМ", keywords: ["транспорт", "перевозк", "аренд", "автовышк", "экскаватор", "погрузчик", "автобус", "гсм", "бензин", "дизел", "топлив", "аи-92", "аи-95", "спецтехник"] },
+  { id: "food", label: "🍲 Продукты питания и кейтеринг", shortLabel: "Питание и продукты", keywords: ["питан", "продукт", "мясо", "молок", "хлеб", "масло", "овощ", "круп", "кейтеринг", "столов", "обед", "сахар", "мука"] },
+  { id: "medical", label: "💊 Медицина и фармацевтика", shortLabel: "Медицина и фарма", keywords: ["медицин", "лекарств", "фармацевт", "препарат", "шприц", "перчатк", "перевязочн", "бинт", "дезинфицирующ", "изделия мед", "медтехник"] },
+];
+
+export type TelegramUserFilter = {
+  chatId: string;
+  userId: string;
+  locality: string;
+  category: IndustryCategory;
+  subject: string;
+  constructionOnly: boolean;
+  maxBudget: number;
+  keywords: string[];
+  updatedAt: number;
+};
+
+const memoryFilters = new Map<string, TelegramUserFilter>();
+
+export async function getTelegramFilter(chatId: string): Promise<TelegramUserFilter> {
+  const binding = await getDb();
+  if (!binding) {
+    return memoryFilters.get(chatId) ?? {
+      chatId,
+      userId: "",
+      locality: "turkestan_cluster",
+      category: "all",
+      subject: "all",
+      constructionOnly: false,
+      maxBudget: 0,
+      keywords: [],
+      updatedAt: Date.now(),
+    };
+  }
+  const row = await binding.prepare("SELECT * FROM telegram_filters WHERE chat_id = ?").bind(chatId).first<{
+    chat_id: string; user_id: string; locality: string; category?: string; subject: string; construction_only: number;
+    max_budget: number; keywords: string; updated_at: number;
+  }>();
+  if (!row) {
+    return {
+      chatId,
+      userId: "",
+      locality: "turkestan_cluster",
+      category: "all",
+      subject: "all",
+      constructionOnly: false,
+      maxBudget: 0,
+      keywords: [],
+      updatedAt: Date.now(),
+    };
+  }
+  let keywords: string[] = [];
+  try { keywords = JSON.parse(row.keywords); } catch {}
+  return {
+    chatId: row.chat_id,
+    userId: row.user_id,
+    locality: row.locality,
+    category: (row.category as IndustryCategory) || "all",
+    subject: row.subject,
+    constructionOnly: Boolean(row.construction_only),
+    maxBudget: Number(row.max_budget),
+    keywords: Array.isArray(keywords) ? keywords : [],
+    updatedAt: Number(row.updated_at),
+  };
+}
+
+export async function saveTelegramFilter(filter: Partial<TelegramUserFilter> & { chatId: string }): Promise<TelegramUserFilter> {
+  const current = await getTelegramFilter(filter.chatId);
+  const updated: TelegramUserFilter = {
+    ...current,
+    ...filter,
+    updatedAt: Date.now(),
+  };
+  const binding = await getDb();
+  if (!binding) {
+    memoryFilters.set(filter.chatId, updated);
+    return updated;
+  }
+  try {
+    await binding.prepare(`ALTER TABLE telegram_filters ADD COLUMN category text DEFAULT 'all' NOT NULL`).run();
+  } catch {}
+
+  await binding.prepare(`INSERT INTO telegram_filters (chat_id, user_id, locality, category, subject, construction_only, max_budget, keywords, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(chat_id) DO UPDATE SET
+      user_id=excluded.user_id, locality=excluded.locality, category=excluded.category, subject=excluded.subject,
+      construction_only=excluded.construction_only, max_budget=excluded.max_budget,
+      keywords=excluded.keywords, updated_at=excluded.updated_at`)
+    .bind(
+      updated.chatId, updated.userId, updated.locality, updated.category, updated.subject,
+      updated.constructionOnly ? 1 : 0, updated.maxBudget,
+      JSON.stringify(updated.keywords), updated.updatedAt
+    ).run();
+  return updated;
+}
+
+
+
