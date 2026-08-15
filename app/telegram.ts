@@ -346,15 +346,10 @@ export async function handleTelegramUpdate(update: {
         }
       }
 
-      // Plain /start without token
+      // Direct Telegram Onboarding without website requirement
       if (chatId === adminChatId) {
-        await sendTelegramMessage(chatId, `👑 <b>Здравствуйте, Главный Администратор!</b>\n━━━━━━━━━━━━━━━━━━━━\nВы авторизованы как Главный Администратор <b>QazTender Radar</b>.\n\n⚡ <b>Быстрые команды:</b>\n/hot — 🔥 Горящие тендеры (скоро дедлайн)\n/top — 💎 Крупнейшие закупки по бюджету\n/digest — 📊 Сводка по всем тендерам\n/status — ℹ️ Проверить статус системы\n\n🔔 <i>Сюда также приходят заявки сотрудников на модерацию.</i>`, {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "🔥 Горящие тендеры", callback_data: "cmd_hot" }, { text: "💎 Топ по бюджету", callback_data: "cmd_top" }],
-              [{ text: "📊 Сводка дня", callback_data: "cmd_digest" }],
-            ],
-          },
+        await sendTelegramMessage(chatId, `👑 <b>Здравствуйте, Главный Администратор!</b>\n━━━━━━━━━━━━━━━━━━━━\nВы авторизованы как Главный Администратор <b>QazTender Radar</b>.\n\n⚡ <b>Быстрые функции:</b>\n• <b>🎯 Мои тендеры</b> — подборка закупок по Туркестану и РК\n• <b>📁 Мои в работе</b> — воронка стадий и чек-листы документов\n• <b>🔥 Горящие тендеры</b> — срочные закупки перед дедлайном\n• <b>⚙️ Настроить фильтр</b> — выбор городов, отраслей и бюджета\n\n🔔 <i>Сюда автоматически поступают заявки новых пользователей на модерацию с кнопками одобрения.</i>`, {
+          reply_markup: MAIN_REPLY_KEYBOARD,
         });
         return { ok: true };
       }
@@ -362,16 +357,88 @@ export async function handleTelegramUpdate(update: {
       const existing = await getTelegramSubscriberByChatId(chatId);
       if (existing) {
         if (existing.status === "approved") {
-          await sendTelegramMessage(chatId, `✅ <b>Бот активен!</b>\n\nВы успешно подключены к QazTender Radar. Уведомления включены.\n\n⚡ Используйте команды:\n/hot — Горящие тендеры\n/top — Топ по бюджету\n/status — Статус подписки`);
+          await sendTelegramMessage(chatId, `✅ <b>Здравствуйте, ${tgUser.first_name || "партнёр"}!</b>\n━━━━━━━━━━━━━━━━━━━━\nВы успешно авторизованы в <b>QazTender Radar</b>. Вам доступны все функции:\n\n• 🎯 <b>Мои тендеры</b> — подборка по вашим фильтрам и региону\n• 📁 <b>Мои в работе</b> — персональная воронка стадий и чек-листы документов РК\n• 🔥 <b>Горящие тендеры</b> — срочные закупки перед дедлайном\n• ⚙️ <b>Настроить фильтр</b> — выбор города, отрасли и суммы\n\n<i>Воспользуйтесь кнопками меню внизу экрана:</i>`, {
+            reply_markup: MAIN_REPLY_KEYBOARD,
+          });
         } else if (existing.status === "pending") {
-          await sendTelegramMessage(chatId, `⏳ <b>Ваша заявка находится на рассмотрении.</b>\n\nОжидайте одобрения Главным Администратором.`);
+          await sendTelegramMessage(chatId, `⏳ <b>Ваша заявка ожидает подтверждения Главным Администратором.</b>\n\nКак только администратор подтвердит доступ, вам сразу откроются поиск тендеров, персональные фильтры и воронка!`);
         } else {
-          await sendTelegramMessage(chatId, `⛔ <b>Ваш доступ к рассылке приостановлен или отклонен.</b>\n\nОбратитесь к Главному Администратору.`);
+          await sendTelegramMessage(chatId, `⛔ <b>Ваш доступ к боту приостановлен администратором.</b>`);
         }
       } else {
-        await sendTelegramMessage(chatId, `👋 <b>Добро пожаловать в QazTender Radar Bot!</b>\n\nДля привязки аккаунта войдите в личный кабинет на сайте QazTender Radar и нажмите кнопку «Подключить Telegram».`);
+        // Automatically create subscriber record and notify admin immediately
+        const userId = `tg_${chatId}`;
+        const userLabel = tgUser.username ? `@${tgUser.username}` : (tgUser.first_name || "Новый пользователь");
+        await createOrUpdateTelegramSubscriber({
+          userId,
+          chatId,
+          username: tgUser.username ?? "",
+          firstName: tgUser.first_name ?? "",
+          status: "pending",
+        });
+
+        await sendTelegramMessage(chatId, `👋 <b>Добро пожаловать в QazTender Radar!</b>\n━━━━━━━━━━━━━━━━━━━━\n⏳ Ваша заявка на доступ отправлена Главному Администратору (@mielonur).\n\nКак только Главный Администратор подтвердит заявку, вам сразу откроются поиск госзакупок, персональные фильтры, воронка и чек-листы документов РК!`);
+
+        // Notify Main Admin immediately with interactive approval buttons
+        const dateStr = dateFormatter.format(Date.now());
+        const adminNotify = `🔔 <b>НОВАЯ ЗАЯВКА НА ДОСТУП В TELEGRAM-БОТ</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+          `👤 <b>Пользователь:</b> ${userLabel} (ID: <code>${chatId}</code>)\n` +
+          `📅 <b>Дата:</b> ${dateStr}\n\n` +
+          `Одобрить доступ пользователю к боту?`;
+
+        await sendTelegramMessage(adminChatId, adminNotify, {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "✅ Одобрить доступ", callback_data: `approve_tg:${chatId}:${encodeURIComponent(userLabel)}` },
+                { text: "❌ Отклонить", callback_data: `reject_tg:${chatId}:${encodeURIComponent(userLabel)}` },
+              ],
+            ],
+          },
+        });
       }
       return { ok: true };
+    }
+
+    // Gate: check subscriber status for non-admin users
+    if (chatId !== adminChatId) {
+      const sub = await getTelegramSubscriberByChatId(chatId);
+      if (!sub || sub.status !== "approved") {
+        if (!sub) {
+          const userId = `tg_${chatId}`;
+          const userLabel = tgUser.username ? `@${tgUser.username}` : (tgUser.first_name || "Новый пользователь");
+          await createOrUpdateTelegramSubscriber({
+            userId,
+            chatId,
+            username: tgUser.username ?? "",
+            firstName: tgUser.first_name ?? "",
+            status: "pending",
+          });
+          await sendTelegramMessage(chatId, `👋 <b>Добро пожаловать в QazTender Radar!</b>\n━━━━━━━━━━━━━━━━━━━━\n⏳ Ваша заявка на доступ отправлена Главному Администратору (@mielonur).\n\nКак только администратор подтвердит доступ, вам сразу откроются поиск госзакупок, персональные фильтры, воронка и чек-листы документов РК!`);
+
+          const dateStr = dateFormatter.format(Date.now());
+          const adminNotify = `🔔 <b>НОВАЯ ЗАЯВКА НА ДОСТУП В TELEGRAM-БОТ</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+            `👤 <b>Пользователь:</b> ${userLabel} (ID: <code>${chatId}</code>)\n` +
+            `📅 <b>Дата:</b> ${dateStr}\n\n` +
+            `Одобрить доступ пользователю к боту?`;
+
+          await sendTelegramMessage(adminChatId, adminNotify, {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: "✅ Одобрить доступ", callback_data: `approve_tg:${chatId}:${encodeURIComponent(userLabel)}` },
+                  { text: "❌ Отклонить", callback_data: `reject_tg:${chatId}:${encodeURIComponent(userLabel)}` },
+                ],
+              ],
+            },
+          });
+        } else if (sub.status === "pending") {
+          await sendTelegramMessage(chatId, `⏳ <b>Ваша заявка ожидает подтверждения Главным Администратором.</b>\n\nКак только администратор подтвердит заявку, бот сразу пришлёт вам уведомление.`);
+        } else {
+          await sendTelegramMessage(chatId, `⛔ <b>Ваш доступ к боту приостановлен администратором.</b>`);
+        }
+        return { ok: true };
+      }
     }
 
     if (text === "/hot" || text === "🔥 Горящие тендеры") {
@@ -670,6 +737,52 @@ export async function handleTelegramUpdate(update: {
       if (targetChatId) {
         await sendTelegramMessage(targetChatId, `⛔ <b>Ваша заявка на подключение уведомлений отклонена администратором.</b>`);
       }
+      return { ok: true };
+    }
+
+    // Approve Telegram-only subscriber by admin
+    if (data.startsWith("approve_tg:")) {
+      if (fromId !== adminChatId) {
+        await answerCallbackQuery(query.id, "❌ Только Главный Администратор может одобрять заявки.", true);
+        return { ok: true };
+      }
+      const [, targetChatId, rawName] = data.split(":");
+      const targetName = decodeURIComponent(rawName || "user");
+      const targetUserId = `tg_${targetChatId}`;
+      await updateTelegramSubscriberStatus(targetUserId, "approved", "admin");
+      await answerCallbackQuery(query.id, `✅ Доступ для ${targetName} одобрен!`, true);
+
+      if (query.message) {
+        await editMessageReplyMarkup(query.message.chat.id, query.message.message_id, {
+          inline_keyboard: [[{ text: `✅ Доступ одобрен (${targetName})`, callback_data: "done" }]],
+        });
+      }
+
+      await sendTelegramMessage(targetChatId, `🎉 <b>Главный Администратор одобрил ваш доступ к QazTender Radar!</b>\n━━━━━━━━━━━━━━━━━━━━\nВам открыт полный доступ к платформе госзакупок:\n\n• 🎯 <b>Мои тендеры</b> — подборка по ключевым словам и вашему региону\n• ⚙️ <b>Настроить фильтр</b> — выбор городов, отраслей и бюджета\n• 📁 <b>Мои в работе</b> — персональная воронка стадий и чек-листы документов\n• 🔥 <b>Горящие тендеры</b> — топ срочных закупок перед дедлайном\n\n<i>Воспользуйтесь кнопками меню внизу экрана, чтобы начать:</i>`, {
+        reply_markup: MAIN_REPLY_KEYBOARD,
+      });
+      return { ok: true };
+    }
+
+    // Reject Telegram-only subscriber by admin
+    if (data.startsWith("reject_tg:")) {
+      if (fromId !== adminChatId) {
+        await answerCallbackQuery(query.id, "❌ Только Главный Администратор может отклонять заявки.", true);
+        return { ok: true };
+      }
+      const [, targetChatId, rawName] = data.split(":");
+      const targetName = decodeURIComponent(rawName || "user");
+      const targetUserId = `tg_${targetChatId}`;
+      await updateTelegramSubscriberStatus(targetUserId, "rejected", "admin");
+      await answerCallbackQuery(query.id, `❌ Доступ для ${targetName} отклонён.`, true);
+
+      if (query.message) {
+        await editMessageReplyMarkup(query.message.chat.id, query.message.message_id, {
+          inline_keyboard: [[{ text: `❌ Доступ отклонён (${targetName})`, callback_data: "done" }]],
+        });
+      }
+
+      await sendTelegramMessage(targetChatId, `⛔ <b>Ваша заявка на доступ отклонена администратором.</b>`);
       return { ok: true };
     }
 
