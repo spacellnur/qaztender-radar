@@ -79,16 +79,18 @@ export function formatPaywallMessage(chatId: string | number, username?: string,
   return { text, reply_markup };
 }
 
-export const MAIN_REPLY_KEYBOARD = {
-  keyboard: [
-    [{ text: "🎯 Мои тендеры" }, { text: "📁 Мои в работе" }],
-    [{ text: "🔥 Горящие тендеры" }, { text: "💎 Топ по бюджету" }],
-    [{ text: "⚙️ Настроить фильтр" }, { text: "🔍 Найти тендер" }],
-    [{ text: "🎁 Пригласить друга (+3 дня)" }, { text: "🌐 Войти на сайт" }],
-    [{ text: "💼 Тарифы и связь" }, { text: "ℹ️ Справка о системе" }],
+export const MAIN_INLINE_MENU = {
+  inline_keyboard: [
+    [{ text: "🎯 Мои тендеры", callback_data: "cmd_my_tenders" }, { text: "📁 Мои в работе", callback_data: "cmd_inwork" }],
+    [{ text: "🔥 Горящие лоты", callback_data: "cmd_hot" }, { text: "💎 Топ по сумме", callback_data: "cmd_top" }],
+    [{ text: "⚙️ Настроить фильтр", callback_data: "cmd_filter" }, { text: "🌐 Войти на сайт", callback_data: "cmd_web" }],
+    [{ text: "🎁 Пригласить друга (+3 дн.)", callback_data: "cmd_ref" }, { text: "💼 Тарифы и связь", callback_data: "cmd_pricing" }],
+    [{ text: "📈 Мой статус", callback_data: "cmd_status" }, { text: "ℹ️ Справка", callback_data: "cmd_info" }],
   ],
-  resize_keyboard: true,
-  is_persistent: true,
+};
+
+export const MAIN_REPLY_KEYBOARD = {
+  remove_keyboard: true,
 };
 
 function getLocalityLabel(val: string): string {
@@ -121,11 +123,11 @@ export function checkFloodSpam(chatId: string | number): { blocked: boolean; rem
   }
 
   const fourSecAgo = now - 4000;
-  let actions = (userActionTimestamps.get(idStr) || []).filter((t) => t > fourSecAgo);
-  actions.push(now);
-  userActionTimestamps.set(idStr, actions);
+  let timestamps = (userActionTimestamps.get(idStr) || []).filter((ts) => ts > fourSecAgo);
+  timestamps.push(now);
+  userActionTimestamps.set(idStr, timestamps);
 
-  if (actions.length > MAX_BURST_ACTIONS) {
+  if (timestamps.length > MAX_BURST_ACTIONS) {
     const penaltyMs = 60 * 1000; // 60s cooldown
     userCooldownUntil.set(idStr, now + penaltyMs);
     return { blocked: true, remainingSeconds: 60 };
@@ -171,10 +173,38 @@ export async function sendFilterSettingsMessage(chatId: string | number) {
     [{ text: "📍 Сменить город / район", callback_data: "menu_locality" }],
     [{ text: "📁 Сменить сферу деятельности", callback_data: "menu_category" }],
     [{ text: currentFilter.maxBudget > 0 ? "💰 Бюджет: Ограничен" : "💰 Бюджет: Любой", callback_data: "menu_budget" }],
-    [{ text: "🎯 Показать подходящие тендеры", callback_data: "cmd_my" }],
+    [{ text: "🎯 Показать подходящие тендеры", callback_data: "cmd_my_tenders" }],
   ];
 
   await sendTelegramMessage(chatId, msg, { reply_markup: { inline_keyboard: buttons } });
+}
+
+export async function registerBotCommands(): Promise<boolean> {
+  const token = getBotToken();
+  if (!token) return false;
+  try {
+    const commands = [
+      { command: "menu", description: "📋 Главное меню платформы" },
+      { command: "tenders", description: "🎯 Мои подобранные тендеры" },
+      { command: "inwork", description: "📁 Мои закупки в работе" },
+      { command: "hot", description: "🔥 Горящие лоты перед дедлайном" },
+      { command: "top", description: "💎 Топ тендеров по бюджету" },
+      { command: "filter", description: "⚙️ Настроить город, сферу и сумму" },
+      { command: "web", description: "🌐 Войти на сайт QazTender Radar" },
+      { command: "ref", description: "🎁 Пригласить друга (+3 дня)" },
+      { command: "status", description: "📈 Мой статус подписки и лимиты" },
+      { command: "pricing", description: "💼 Тарифы и связь с разработчиком" },
+      { command: "hide", description: "❌ Убрать клавиатуру с экрана" },
+    ];
+    await fetch(`https://api.telegram.org/bot${token}/setMyCommands`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ commands }),
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function sendTelegramMessage(chatId: string | number, text: string, options?: {
@@ -183,6 +213,7 @@ export async function sendTelegramMessage(chatId: string | number, text: string,
     keyboard?: Array<Array<{ text: string }>>;
     resize_keyboard?: boolean;
     is_persistent?: boolean;
+    remove_keyboard?: boolean;
   };
   parse_mode?: "HTML" | "MarkdownV2" | "Markdown";
 }): Promise<{ ok: boolean; message_id?: number; description?: string }> {
@@ -198,8 +229,6 @@ export async function sendTelegramMessage(chatId: string | number, text: string,
 
   if (options?.reply_markup) {
     payload.reply_markup = options.reply_markup;
-  } else {
-    payload.reply_markup = MAIN_REPLY_KEYBOARD;
   }
 
   try {
@@ -569,6 +598,20 @@ export async function handleTelegramUpdate(update: {
         await sendTelegramMessage(chatId, pw.text, { reply_markup: pw.reply_markup });
         return { ok: true };
       }
+    }
+
+    if (text === "/menu" || text === "📋 Главное меню" || text === "📋 Меню") {
+      await sendTelegramMessage(chatId, `📋 <b>ГЛАВНОЕ МЕНЮ QAZTENDER RADAR</b>\n━━━━━━━━━━━━━━━━━━━━\nВыберите нужный раздел или используйте кнопку меню <b>[/]</b> слева внизу:`, {
+        reply_markup: MAIN_INLINE_MENU,
+      });
+      return { ok: true };
+    }
+
+    if (text === "/hide" || text === "/close" || text === "/keyboard_off") {
+      await sendTelegramMessage(chatId, "✅ Клавиатура скрыта. Чтобы открыть меню, напишите <code>/menu</code> или нажмите кнопку <b>[/]</b> слева внизу.", {
+        reply_markup: { remove_keyboard: true },
+      });
+      return { ok: true };
     }
 
     if (text === "/hot" || text === "🔥 Горящие тендеры") {
@@ -1520,6 +1563,120 @@ export async function handleTelegramUpdate(update: {
       await answerCallbackQuery(query.id, budgetNum > 0 ? `✅ Бюджет до ${moneyFormatter.format(budgetNum)}` : "✅ Бюджет: Любой");
       await sendFilterSettingsMessage(fromId);
       return { ok: true };
+    }
+
+    if (data === "cmd_my_tenders") {
+      await answerCallbackQuery(query.id);
+      return handleTelegramWebhook({
+        update_id: query.id ? Number(query.id) : 0,
+        message: {
+          chat: { id: fromId },
+          from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
+          text: "/tenders",
+        },
+      });
+    }
+
+    if (data === "cmd_inwork") {
+      await answerCallbackQuery(query.id);
+      return handleTelegramWebhook({
+        update_id: query.id ? Number(query.id) : 0,
+        message: {
+          chat: { id: fromId },
+          from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
+          text: "/inwork",
+        },
+      });
+    }
+
+    if (data === "cmd_hot") {
+      await answerCallbackQuery(query.id);
+      return handleTelegramWebhook({
+        update_id: query.id ? Number(query.id) : 0,
+        message: {
+          chat: { id: fromId },
+          from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
+          text: "/hot",
+        },
+      });
+    }
+
+    if (data === "cmd_top") {
+      await answerCallbackQuery(query.id);
+      return handleTelegramWebhook({
+        update_id: query.id ? Number(query.id) : 0,
+        message: {
+          chat: { id: fromId },
+          from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
+          text: "/top",
+        },
+      });
+    }
+
+    if (data === "cmd_filter") {
+      await answerCallbackQuery(query.id);
+      await sendFilterSettingsMessage(fromId);
+      return { ok: true };
+    }
+
+    if (data === "cmd_web") {
+      await answerCallbackQuery(query.id);
+      return handleTelegramWebhook({
+        update_id: query.id ? Number(query.id) : 0,
+        message: {
+          chat: { id: fromId },
+          from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
+          text: "/web",
+        },
+      });
+    }
+
+    if (data === "cmd_ref") {
+      await answerCallbackQuery(query.id);
+      return handleTelegramWebhook({
+        update_id: query.id ? Number(query.id) : 0,
+        message: {
+          chat: { id: fromId },
+          from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
+          text: "/ref",
+        },
+      });
+    }
+
+    if (data === "cmd_pricing") {
+      await answerCallbackQuery(query.id);
+      return handleTelegramWebhook({
+        update_id: query.id ? Number(query.id) : 0,
+        message: {
+          chat: { id: fromId },
+          from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
+          text: "/pricing",
+        },
+      });
+    }
+
+    if (data === "cmd_status") {
+      await answerCallbackQuery(query.id);
+      return handleTelegramWebhook({
+        update_id: query.id ? Number(query.id) : 0,
+        message: {
+          chat: { id: fromId },
+          from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
+          text: "/status",
+        },
+      });
+    }
+
+    if (data === "cmd_info") {
+      await answerCallbackQuery(query.id);
+      return handleTelegramWebhook({
+        update_id: query.id ? Number(query.id) : 0,
+        message: {
+          chat: { id: fromId },
+          from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
+          text: "/info",
+        },
+      });
     }
 
     if (data === "done") {
