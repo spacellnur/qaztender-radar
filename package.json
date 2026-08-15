@@ -43,5 +43,17 @@
     "vite": "8.0.13",
     "wrangler": "4.92.0"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@cloudflare/workerd-linux-64",
+      "@cloudflare/workerd-darwin-64",
+      "@cloudflare/workerd-darwin-arm64",
+      "@cloudflare/workerd-linux-arm64",
+      "@cloudflare/workerd-windows-64",
+      "esbuild",
+      "sharp",
+      "workerd"
+    ]
+  },
   "type": "module"
 }
