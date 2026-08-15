@@ -1,12 +1,13 @@
 import {
-  consumeTelegramConnectToken, createOrUpdateTelegramSubscriber, createTenderNote,
-  getCompanyProfile, getDbUserById, getTelegramFilter,
+  consumeTelegramConnectToken, createOrUpdateTelegramSubscriber, createTelegramWebLogin,
+  createTenderNote, getCompanyProfile, getDbUserById, getTelegramFilter,
   getTelegramSubscriberByChatId, getTelegramSubscriberByUserId, getTenderById,
   getTenderDetails, getTenderTask, getTenderTaskWorkspace, grantUserSubscription,
   INDUSTRY_CATEGORIES, IndustryCategory, isTenderDeliveredToUser, listApprovedTelegramSubscribers,
   listTelegramSubscribers, listTenderNotes, listTenders, listTenderWorkflow,
-  recordTelegramDelivery, saveTelegramFilter, saveTenderWorkflow, seedTenderTaskTemplate,
-  updateTelegramSubscriberStatus, updateTenderTask
+  recordTelegramDelivery, rewardReferrer, saveTelegramFilter, saveTenderWorkflow,
+  seedTenderTaskTemplate, updateTelegramSubscriberStatus, updateTenderTask,
+  verifyTelegramWebLoginCode, verifyTelegramWebLoginToken
 } from "./db";
 import { localities } from "./localities";
 import { explainTenderMatch } from "./tender-matching";
@@ -83,6 +84,7 @@ export const MAIN_REPLY_KEYBOARD = {
     [{ text: "🎯 Мои тендеры" }, { text: "📁 Мои в работе" }],
     [{ text: "🔥 Горящие тендеры" }, { text: "💎 Топ по бюджету" }],
     [{ text: "⚙️ Настроить фильтр" }, { text: "🔍 Найти тендер" }],
+    [{ text: "🎁 Пригласить друга (+3 дня)" }, { text: "🌐 Войти на сайт" }],
     [{ text: "💼 Тарифы и связь" }, { text: "ℹ️ Справка о системе" }],
   ],
   resize_keyboard: true,
@@ -102,7 +104,7 @@ function getCategoryLabel(val: string): string {
 const userSearchTimestamps = new Map<string, number[]>();
 const userActionTimestamps = new Map<string, number[]>();
 const userCooldownUntil = new Map<string, number>();
-const userApplicationMode = new Map<string, { inProgress: boolean }>();
+const userApplicationMode = new Map<string, { inProgress: boolean; referrerChatId?: string }>();
 
 export const MAX_SEARCHES_PER_HOUR = 10; // 10 searches per hour for free text search / tender matching
 export const MAX_BURST_ACTIONS = 6; // max 6 button clicks / commands within 4 seconds (Anti-Flood)
@@ -411,12 +413,46 @@ export async function handleTelegramUpdate(update: {
         return { ok: true };
       }
 
+      if (text.startsWith("/start ref_")) {
+        const referrerChatId = text.replace("/start ref_", "").trim();
+        userApplicationMode.set(chatId, { inProgress: true, referrerChatId });
+        await sendTelegramMessage(chatId, `👋 <b>Добро пожаловать в QazTender Radar!</b>\n━━━━━━━━━━━━━━━━━━━━\n🎁 <b>БОНУС ПО ПРИГЛАШЕНИЮ:</b> Вы перешли по персональной ссылке!\n\nЗаполните короткую анкету и получите <b>6 ДНЕЙ БЕСПЛАТНОГО ДОСТУПА</b> (3 базовых + 3 бонусных дня)!\n\n<i>Нажмите кнопку ниже для старта 👇</i>`, {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "📝 Заполнить анкету (+6 дней бонуса)", callback_data: "apply_access" }],
+              [{ text: "💬 Написать разработчику (Тарифы)", url: "https://t.me/mielonur" }],
+            ],
+          },
+        });
+        return { ok: true };
+      }
+
+      if (text === "/start web" || text === "/web" || text === "🌐 Войти на сайт") {
+        const sub = await getTelegramSubscriberByChatId(chatId);
+        const userId = sub ? sub.userId : `tg_${chatId}`;
+        const login = await createTelegramWebLogin(chatId, userId);
+        const webUrl = `https://qaztender-radar-xf7n.onrender.com/api/auth/telegram-login?token=${login.token}`;
+
+        await sendTelegramMessage(chatId, `🌐 <b>ВХОД НА САЙТ QAZTENDER RADAR</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+          `Ваш персональный доступ к сайту готов!\n\n` +
+          `🔑 <b>Ваш 6-значный код:</b>\n<code>${login.code}</code>\n\n` +
+          `Либо просто нажмите кнопку ниже, чтобы <b>мгновенно войти на сайт в 1 клик</b> без ввода кода:\n\n` +
+          `⏳ <i>Код и ссылка действуют 15 минут.</i>`, {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🚀 Войти на сайт в 1 клик", url: webUrl }],
+            ],
+          },
+        });
+        return { ok: true };
+      }
+
       const existing = await getTelegramSubscriberByChatId(chatId);
       if (existing) {
         const subCheck = isSubActive(existing);
         if (subCheck.active) {
           const typeBadge = subCheck.isTrial ? `🎁 Бесплатный период (осталось ${subCheck.daysLeft} дн. до ${subCheck.expiresStr})` : `💎 Подписка активна (до ${subCheck.expiresStr})`;
-          await sendTelegramMessage(chatId, `✅ <b>Здравствуйте, ${tgUser.first_name || "партнёр"}!</b>\n━━━━━━━━━━━━━━━━━━━━\nСтатус: <b>${typeBadge}</b>\n\nВам доступны все возможности QazTender Radar:\n• 🎯 <b>Мои тендеры</b> — подборка по вашим фильтрам и региону\n• 📁 <b>Мои в работе</b> — персональная воронка стадий и чек-листы документов РК\n• 🔥 <b>Горящие тендеры</b> — срочные закупки перед дедлайном\n• ⚙️ <b>Настроить фильтр</b> — выбор города, отрасли и суммы\n\n<i>Воспользуйтесь кнопками меню внизу экрана:</i>`, {
+          await sendTelegramMessage(chatId, `✅ <b>Здравствуйте, ${tgUser.first_name || "партнёр"}!</b>\n━━━━━━━━━━━━━━━━━━━━\nСтатус: <b>${typeBadge}</b>\n\nВам доступны все возможности QazTender Radar:\n• 🎯 <b>Мои тендеры</b> — подборка по вашим фильтрам и региону\n• 📁 <b>Мои в работе</b> — персональная воронка стадий и чек-листы документов РК\n• 🔥 <b>Горящие тендеры</b> — срочные закупки перед дедлайном\n• ⚙️ <b>Настроить фильтр</b> — выбор города, отрасли и суммы\n• 🌐 <b>Войти на сайт</b> — веб-кабинет (/web)\n• 🎁 <b>Рефералы</b> — приглашайте друзей и получайте +3 дня (/ref)\n\n<i>Воспользуйтесь кнопками меню внизу экрана:</i>`, {
             reply_markup: MAIN_REPLY_KEYBOARD,
           });
         } else {
@@ -444,11 +480,14 @@ export async function handleTelegramUpdate(update: {
       if (!sub) {
         const userText = text.trim();
         if (userText.length >= 6) {
-          // User submitted an actual application -> GRANT 3-DAY FREE TRIAL!
+          // User submitted an actual application
+          const appSession = userApplicationMode.get(chatId);
+          const referrerChatId = appSession?.referrerChatId || "";
           userApplicationMode.delete(chatId);
           const userId = `tg_${chatId}`;
           const userLabel = tgUser.username ? `@${tgUser.username}` : (tgUser.first_name || "Новый пользователь");
-          const trialExpiresAt = Date.now() + 3 * 24 * 60 * 60 * 1000;
+          const bonusDays = referrerChatId ? 6 : 3;
+          const trialExpiresAt = Date.now() + bonusDays * 24 * 60 * 60 * 1000;
           const trialDateStr = dateFormatter.format(trialExpiresAt);
 
           await createOrUpdateTelegramSubscriber({
@@ -460,25 +499,39 @@ export async function handleTelegramUpdate(update: {
             status: "approved",
             paymentStatus: "trial",
             trialExpiresAt,
+            referredByChatId: referrerChatId,
           });
 
+          // Reward the referrer if applicable!
+          if (referrerChatId && referrerChatId !== chatId) {
+            const rewarded = await rewardReferrer(referrerChatId, 3);
+            if (rewarded) {
+              const refExpStr = dateFormatter.format(rewarded.subscriptionExpiresAt || rewarded.trialExpiresAt || Date.now());
+              await sendTelegramMessage(referrerChatId, `🎉 <b>БОНУС ЗА РЕФЕРАЛА!</b>\n━━━━━━━━━━━━━━━━━━━━\nПо вашей ссылке зарегистрировался <b>${userLabel}</b>!\n\nВам начислено <b>+3 дня</b> бесплатного доступа к QazTender Radar!\nНовый срок действия: до <b>${refExpStr}</b> (всего приглашено: ${rewarded.referralsCount || 1} чел.) 🚀`);
+            }
+          }
+
+          const bonusBadge = referrerChatId ? `🎁 Вам начислен БОНУС ПО ПРИГЛАШЕНИЮ: <b>6 ДНЕЙ БЕСПЛАТНО</b>` : `🎁 Вам открыт <b>ПОЛНЫЙ ДОСТУП НА 3 ДНЯ БЕСПЛАТНО</b>`;
           const welcomeTrialMsg = `🎉 <b>ДОБРО ПОЖАЛОВАТЬ В QAZTENDER RADAR!</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
             `Здравствуйте, <b>${tgUser.first_name || "партнёр"}</b>!\n\n` +
-            `🎁 Вам открыт <b>ПОЛНЫЙ ДОСТУП НА 3 ДНЯ БЕСПЛАТНО</b> (до <b>${trialDateStr}</b>)!\n\n` +
+            `${bonusBadge} (до <b>${trialDateStr}</b>)!\n\n` +
             `Вам доступны все инструменты платформы:\n` +
             `• 🎯 <b>Мои тендеры</b> — подборка закупок по вашим ключевым словам\n` +
             `• ⚙️ <b>Настроить фильтр</b> — выбор региона, сферы и бюджета\n` +
             `• 📁 <b>Мои в работе</b> — персональная воронка и чек-листы документов РК\n` +
-            `• 🔥 <b>Горящие тендеры</b> — топ срочных лотов перед дедлайном\n\n` +
+            `• 🔥 <b>Горящие тендеры</b> — топ срочных лотов перед дедлайном\n` +
+            `• 🌐 <b>Войти на сайт</b> — доступ к сайту без паролей (/web)\n` +
+            `• 🎁 <b>Пригласить друга</b> — получайте +3 дня за каждого друга (/ref)\n\n` +
             `<i>Воспользуйтесь кнопками меню внизу экрана, чтобы начать:</i>`;
 
           await sendTelegramMessage(chatId, welcomeTrialMsg, { reply_markup: MAIN_REPLY_KEYBOARD });
 
           // Notify Admin (CRM Lead) with 1-click subscription management buttons
           const dateStr = dateFormatter.format(Date.now());
-          const adminNotify = `👤 <b>НОВЫЙ ПОЛЬЗОВАТЕЛЬ В БАЗЕ (3 ДНЯ ТРИАЛ)</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+          const refNote = referrerChatId ? `\n🔗 <b>Реферал от ID:</b> <code>${referrerChatId}</code> (+6 дн.)` : "";
+          const adminNotify = `👤 <b>НОВЫЙ ПОЛЬЗОВАТЕЛЬ В БАЗЕ (${bonusDays} ДНЕЙ ТРИАЛ)</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
             `👤 <b>Пользователь:</b> ${userLabel} (ID: <code>${chatId}</code>)\n` +
-            `🏢 <b>Анкета:</b>\n<i>${userText}</i>\n\n` +
+            `🏢 <b>Анкета:</b>\n<i>${userText}</i>${refNote}\n\n` +
             `⏳ <b>Триал активен до:</b> ${trialDateStr}\n` +
             `📅 <b>Дата:</b> ${dateStr}\n\n` +
             `Управление подпиской:`;
@@ -496,7 +549,7 @@ export async function handleTelegramUpdate(update: {
           return { ok: true };
         } else {
           // Short or random text — prompt to fill application
-          await sendTelegramMessage(chatId, `ℹ️ <b>Для получения бесплатного доступа на 3 дня заполните короткую анкету:</b>\n\nНапишите одним сообщением ваше имя, компанию, город и сферу тендеров:`, {
+          await sendTelegramMessage(chatId, `ℹ️ <b>Для получения бесплатного доступа заполните короткую анкету:</b>\n\nНапишите одним сообщением ваше имя, компанию, город и сферу тендеров:`, {
             reply_markup: {
               inline_keyboard: [
                 [{ text: "📝 Заполнить анкету (3 дня бесплатно)", callback_data: "apply_access" }],
@@ -672,6 +725,54 @@ export async function handleTelegramUpdate(update: {
           inline_keyboard: [
             [{ text: "💬 Написать разработчику (@mielonur)", url: "https://t.me/mielonur" }],
             [{ text: "📝 Подать заявку на доступ", callback_data: "apply_access" }],
+          ],
+        },
+      });
+      return { ok: true };
+    }
+
+    if (text === "/ref" || text === "/referral" || text === "🎁 Пригласить друга (+3 дня)" || text === "🎁 Рефералы") {
+      const sub = await getTelegramSubscriberByChatId(chatId);
+      const refCount = sub?.referralsCount || 0;
+      const refBonusDays = refCount * 3;
+      const refLink = `https://t.me/QazTendeRadar_bot?start=ref_${chatId}`;
+      const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${encodeURIComponent("🇰🇿 Рекомендую QazTender Radar — умный поиск госзакупок РК и дедлайны! Переходи по ссылке и получи 6 дней бесплатного доступа:")}`;
+
+      const refMsg = `🎁 <b>ПРИГЛАШАЙТЕ ДРУЗЕЙ И ПОЛУЧАЙТЕ +3 ДНЯ!</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `Поделитесь вашей персональной ссылкой с коллегами, партнёрами и предпринимателями:\n\n` +
+        `🔗 <b>Ваша реферальная ссылка:</b>\n<code>${refLink}</code>\n\n` +
+        `👥 <b>Условия бонусной программы:</b>\n` +
+        `• <b>Приглашённый друг</b> получает <b>6 дней бесплатного доступа</b> (вместо 3)!\n` +
+        `• <b>Вы получаете +3 дня</b> к вашей подписке за каждого зарегистрированного друга!\n\n` +
+        `📊 <b>Ваша статистика:</b>\n` +
+        `• Приглашено друзей: <b>${refCount} чел.</b>\n` +
+        `• Начислено бонусов: <b>+${refBonusDays} дней</b>\n\n` +
+        `<i>Нажмите кнопку ниже, чтобы переслать ссылку другу в Telegram:</i>`;
+
+      await sendTelegramMessage(chatId, refMsg, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "📲 Поделиться ссылкой с другом", url: shareUrl }],
+          ],
+        },
+      });
+      return { ok: true };
+    }
+
+    if (text === "/web" || text === "🌐 Войти на сайт") {
+      const sub = await getTelegramSubscriberByChatId(chatId);
+      const userId = sub ? sub.userId : `tg_${chatId}`;
+      const login = await createTelegramWebLogin(chatId, userId);
+      const webUrl = `https://qaztender-radar-xf7n.onrender.com/api/auth/telegram-login?token=${login.token}`;
+
+      await sendTelegramMessage(chatId, `🌐 <b>ВХОД НА САЙТ QAZTENDER RADAR</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `Ваш персональный доступ к сайту готов!\n\n` +
+        `🔑 <b>Ваш 6-значный код для сайта:</b>\n<code>${login.code}</code>\n\n` +
+        `Либо просто нажмите кнопку ниже, чтобы <b>мгновенно войти на сайт в 1 клик</b> без ввода кода:\n\n` +
+        `⏳ <i>Код и ссылка действуют 15 минут.</i>`, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🚀 Войти на сайт в 1 клик", url: webUrl }],
           ],
         },
       });

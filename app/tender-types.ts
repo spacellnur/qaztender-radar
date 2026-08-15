@@ -180,6 +180,8 @@ export type TelegramSubscriber = {
   paymentStatus: PaymentStatus;
   trialExpiresAt: number;
   subscriptionExpiresAt: number | null;
+  referredByChatId?: string;
+  referralsCount?: number;
   lastActiveAt?: number;
   requestedAt: number;
   approvedAt: number | null;
@@ -190,6 +192,7 @@ export type TelegramSubscriber = {
   createdAt: number;
   updatedAt: number;
 };
+
 
 
 

@@ -267,7 +267,7 @@ async function ensureSchema(binding: D1Database): Promise<void> {
       }
     }
 
-    // Auto-migrate new CRM and subscription columns if upgrading an existing database
+    // Auto-migrate new CRM, referral and subscription columns if upgrading an existing database
     const subMigrations = [
       "ALTER TABLE telegram_subscribers ADD COLUMN company_info text DEFAULT '' NOT NULL",
       "ALTER TABLE telegram_subscribers ADD COLUMN city text DEFAULT '' NOT NULL",
@@ -276,6 +276,8 @@ async function ensureSchema(binding: D1Database): Promise<void> {
       "ALTER TABLE telegram_subscribers ADD COLUMN trial_expires_at integer DEFAULT 0 NOT NULL",
       "ALTER TABLE telegram_subscribers ADD COLUMN subscription_expires_at integer",
       "ALTER TABLE telegram_subscribers ADD COLUMN last_active_at integer DEFAULT 0 NOT NULL",
+      "ALTER TABLE telegram_subscribers ADD COLUMN referred_by_chat_id text DEFAULT '' NOT NULL",
+      "ALTER TABLE telegram_subscribers ADD COLUMN referrals_count integer DEFAULT 0 NOT NULL",
     ];
     for (const mSql of subMigrations) {
       try {
@@ -283,6 +285,19 @@ async function ensureSchema(binding: D1Database): Promise<void> {
       } catch {
         void 0;
       }
+    }
+    try {
+      await binding.prepare(`CREATE TABLE IF NOT EXISTS telegram_web_logins (
+        token text PRIMARY KEY NOT NULL,
+        code text NOT NULL,
+        user_id text NOT NULL,
+        chat_id text NOT NULL,
+        status text DEFAULT 'pending' NOT NULL,
+        expires_at integer NOT NULL,
+        created_at integer NOT NULL
+      )`).run();
+    } catch {
+      void 0;
     }
     try {
       await binding.prepare("SELECT user_id FROM telegram_connect_tokens LIMIT 1").run();
@@ -732,6 +747,7 @@ export async function getTelegramSubscriberByUserId(userId: string): Promise<Tel
     company_info?: string; city?: string; industry?: string;
     status: TelegramSubscriberStatus; payment_status?: PaymentStatus;
     trial_expires_at?: number; subscription_expires_at?: number | null; last_active_at?: number;
+    referred_by_chat_id?: string; referrals_count?: number;
     requested_at: number; approved_at: number | null;
     approved_by: string | null; digest_enabled: number; instant_enabled: number;
     deadlines_enabled: number; created_at: number; updated_at: number;
@@ -752,6 +768,8 @@ export async function getTelegramSubscriberByUserId(userId: string): Promise<Tel
     paymentStatus: row.payment_status || "trial",
     trialExpiresAt,
     subscriptionExpiresAt: row.subscription_expires_at || null,
+    referredByChatId: row.referred_by_chat_id || "",
+    referralsCount: row.referrals_count || 0,
     lastActiveAt: row.last_active_at || 0,
     requestedAt: row.requested_at,
     approvedAt: row.approved_at,
@@ -777,6 +795,7 @@ export async function getTelegramSubscriberByChatId(chatId: string): Promise<Tel
     company_info?: string; city?: string; industry?: string;
     status: TelegramSubscriberStatus; payment_status?: PaymentStatus;
     trial_expires_at?: number; subscription_expires_at?: number | null; last_active_at?: number;
+    referred_by_chat_id?: string; referrals_count?: number;
     requested_at: number; approved_at: number | null;
     approved_by: string | null; digest_enabled: number; instant_enabled: number;
     deadlines_enabled: number; created_at: number; updated_at: number;
@@ -797,6 +816,8 @@ export async function getTelegramSubscriberByChatId(chatId: string): Promise<Tel
     paymentStatus: row.payment_status || "trial",
     trialExpiresAt,
     subscriptionExpiresAt: row.subscription_expires_at || null,
+    referredByChatId: row.referred_by_chat_id || "",
+    referralsCount: row.referrals_count || 0,
     lastActiveAt: row.last_active_at || 0,
     requestedAt: row.requested_at,
     approvedAt: row.approved_at,
@@ -821,6 +842,7 @@ export async function createOrUpdateTelegramSubscriber(params: {
   paymentStatus?: PaymentStatus;
   trialExpiresAt?: number;
   subscriptionExpiresAt?: number | null;
+  referredByChatId?: string;
 }): Promise<TelegramSubscriber> {
   const binding = await getDb();
   const existing = await getTelegramSubscriberByUserId(params.userId);
@@ -835,6 +857,8 @@ export async function createOrUpdateTelegramSubscriber(params: {
   const paymentStatus = params.paymentStatus ?? existing?.paymentStatus ?? "trial";
   const trialExpiresAt = params.trialExpiresAt ?? existing?.trialExpiresAt ?? (now + 3 * 24 * 60 * 60 * 1000);
   const subscriptionExpiresAt = params.subscriptionExpiresAt !== undefined ? params.subscriptionExpiresAt : (existing?.subscriptionExpiresAt ?? null);
+  const referredByChatId = params.referredByChatId ?? existing?.referredByChatId ?? "";
+  const referralsCount = existing?.referralsCount ?? 0;
   const requestedAt = existing?.requestedAt ?? now;
   const approvedAt = status === "approved" ? (existing?.approvedAt ?? now) : existing?.approvedAt ?? null;
   const approvedBy = existing?.approvedBy ?? "system_trial";
@@ -852,6 +876,8 @@ export async function createOrUpdateTelegramSubscriber(params: {
     paymentStatus,
     trialExpiresAt,
     subscriptionExpiresAt,
+    referredByChatId,
+    referralsCount,
     lastActiveAt: now,
     requestedAt,
     approvedAt,
@@ -868,26 +894,135 @@ export async function createOrUpdateTelegramSubscriber(params: {
   if (binding) {
     await binding.prepare(`INSERT INTO telegram_subscribers (
         id, user_id, chat_id, username, first_name, company_info, city, industry,
-        status, payment_status, trial_expires_at, subscription_expires_at, last_active_at,
+        status, payment_status, trial_expires_at, subscription_expires_at,
+        referred_by_chat_id, referrals_count, last_active_at,
         requested_at, approved_at, approved_by, digest_enabled, instant_enabled, deadlines_enabled,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 1, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 1, ?, ?)
       ON CONFLICT(user_id) DO UPDATE SET
         chat_id=excluded.chat_id, username=excluded.username, first_name=excluded.first_name,
         company_info=CASE WHEN excluded.company_info != '' THEN excluded.company_info ELSE telegram_subscribers.company_info END,
         city=CASE WHEN excluded.city != '' THEN excluded.city ELSE telegram_subscribers.city END,
         industry=CASE WHEN excluded.industry != '' THEN excluded.industry ELSE telegram_subscribers.industry END,
+        referred_by_chat_id=CASE WHEN excluded.referred_by_chat_id != '' THEN excluded.referred_by_chat_id ELSE telegram_subscribers.referred_by_chat_id END,
         status=excluded.status, payment_status=excluded.payment_status,
         trial_expires_at=excluded.trial_expires_at, subscription_expires_at=excluded.subscription_expires_at,
         last_active_at=excluded.last_active_at, approved_at=excluded.approved_at, updated_at=excluded.updated_at`)
       .bind(
         id, params.userId, params.chatId, username, firstName, companyInfo, city, industry,
-        status, paymentStatus, trialExpiresAt, subscriptionExpiresAt, now, requestedAt,
+        status, paymentStatus, trialExpiresAt, subscriptionExpiresAt,
+        referredByChatId, referralsCount, now, requestedAt,
         approvedAt, approvedBy, existing?.createdAt ?? now, now,
       ).run();
   }
 
   return subscriber;
+}
+
+export async function rewardReferrer(referrerChatId: string, bonusDays = 3): Promise<TelegramSubscriber | null> {
+  const binding = await getDb();
+  let sub = await getTelegramSubscriberByChatId(referrerChatId);
+  if (!sub) {
+    sub = await getTelegramSubscriberByUserId(`tg_${referrerChatId}`);
+  }
+  if (!sub) return null;
+
+  const now = Date.now();
+  const bonusMs = bonusDays * 24 * 60 * 60 * 1000;
+  if (sub.subscriptionExpiresAt && sub.subscriptionExpiresAt > now) {
+    sub.subscriptionExpiresAt += bonusMs;
+  } else {
+    const baseTrial = sub.trialExpiresAt && sub.trialExpiresAt > now ? sub.trialExpiresAt : now;
+    sub.trialExpiresAt = baseTrial + bonusMs;
+  }
+  sub.referralsCount = (sub.referralsCount || 0) + 1;
+  sub.status = "approved";
+  sub.updatedAt = now;
+
+  memorySubscribers.set(sub.userId, sub);
+
+  if (binding) {
+    await binding.prepare(`UPDATE telegram_subscribers SET
+        subscription_expires_at = ?,
+        trial_expires_at = ?,
+        referrals_count = referrals_count + 1,
+        status = 'approved',
+        updated_at = ?
+      WHERE user_id = ?`)
+      .bind(sub.subscriptionExpiresAt, sub.trialExpiresAt, now, sub.userId).run();
+  }
+  return sub;
+}
+
+const memoryWebLogins = new Map<string, { token: string; code: string; userId: string; chatId: string; expiresAt: number }>();
+
+export async function createTelegramWebLogin(chatId: string, userId: string): Promise<{ token: string; code: string }> {
+  const binding = await getDb();
+  const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const now = Date.now();
+  const expiresAt = now + 15 * 60 * 1000; // 15 mins
+
+  memoryWebLogins.set(token, { token, code, userId, chatId, expiresAt });
+  memoryWebLogins.set(`code:${code}`, { token, code, userId, chatId, expiresAt });
+
+  if (binding) {
+    await binding.prepare(`INSERT INTO telegram_web_logins (token, code, user_id, chat_id, status, expires_at, created_at)
+      VALUES (?, ?, ?, ?, 'pending', ?, ?)`)
+      .bind(token, code, userId, chatId, expiresAt, now).run();
+  }
+
+  return { token, code };
+}
+
+export async function verifyTelegramWebLoginToken(token: string): Promise<TelegramSubscriber | null> {
+  const binding = await getDb();
+  const now = Date.now();
+  let userId = "";
+
+  const mem = memoryWebLogins.get(token);
+  if (mem && mem.expiresAt > now) {
+    userId = mem.userId;
+    memoryWebLogins.delete(token);
+    memoryWebLogins.delete(`code:${mem.code}`);
+  }
+
+  if (binding) {
+    const row = await binding.prepare("SELECT * FROM telegram_web_logins WHERE token = ? AND expires_at > ? AND status = 'pending'")
+      .bind(token, now).first<{ user_id: string }>();
+    if (row) {
+      userId = row.user_id;
+      await binding.prepare("UPDATE telegram_web_logins SET status = 'used' WHERE token = ?").bind(token).run();
+    }
+  }
+
+  if (!userId) return null;
+  return await getTelegramSubscriberByUserId(userId);
+}
+
+export async function verifyTelegramWebLoginCode(code: string): Promise<TelegramSubscriber | null> {
+  const binding = await getDb();
+  const now = Date.now();
+  let userId = "";
+
+  const mem = memoryWebLogins.get(`code:${code.trim()}`);
+  if (mem && mem.expiresAt > now) {
+    userId = mem.userId;
+    memoryWebLogins.delete(mem.token);
+    memoryWebLogins.delete(`code:${code.trim()}`);
+  }
+
+  if (binding) {
+    const row = await binding.prepare("SELECT * FROM telegram_web_logins WHERE code = ? AND expires_at > ? AND status = 'pending'")
+      .bind(code.trim(), now).first<{ token: string; user_id: string }>();
+    if (row) {
+      userId = row.user_id;
+      await binding.prepare("UPDATE telegram_web_logins SET status = 'used' WHERE token = ?").bind(row.token).run();
+    }
+  }
+
+  if (!userId) return null;
+  return await getTelegramSubscriberByUserId(userId);
 }
 
 export async function grantUserSubscription(chatIdOrUserId: string, days: number, adminUsername = "admin"): Promise<TelegramSubscriber | null> {
@@ -953,6 +1088,7 @@ export async function listTelegramSubscribers(): Promise<TelegramSubscriber[]> {
     company_info?: string; city?: string; industry?: string;
     status: TelegramSubscriberStatus; payment_status?: PaymentStatus;
     trial_expires_at?: number; subscription_expires_at?: number | null; last_active_at?: number;
+    referred_by_chat_id?: string; referrals_count?: number;
     requested_at: number; approved_at: number | null;
     approved_by: string | null; digest_enabled: number; instant_enabled: number;
     deadlines_enabled: number; created_at: number; updated_at: number;
@@ -973,6 +1109,8 @@ export async function listTelegramSubscribers(): Promise<TelegramSubscriber[]> {
       paymentStatus: row.payment_status || "trial",
       trialExpiresAt,
       subscriptionExpiresAt: row.subscription_expires_at || null,
+      referredByChatId: row.referred_by_chat_id || "",
+      referralsCount: row.referrals_count || 0,
       lastActiveAt: row.last_active_at || 0,
       requestedAt: row.requested_at,
       approvedAt: row.approved_at,
