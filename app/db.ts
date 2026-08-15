@@ -1124,6 +1124,62 @@ export async function listTelegramSubscribers(): Promise<TelegramSubscriber[]> {
   });
 }
 
+export async function touchTelegramSubscriberActivity(userId: string): Promise<void> {
+  const binding = await getDb();
+  const now = Date.now();
+  const existing = memorySubscribers.get(userId);
+  if (existing) {
+    existing.lastActiveAt = now;
+  }
+  if (binding) {
+    try {
+      await binding.prepare("UPDATE telegram_subscribers SET last_active_at = ? WHERE user_id = ?").bind(now, userId).run();
+    } catch {
+      void 0;
+    }
+  }
+}
+
+export async function getTelegramSubscriberStats() {
+  const subs = await listTelegramSubscribers();
+  const adminId = "964524397";
+  const nonAdmin = subs.filter((s) => s.chatId !== adminId);
+  const now = Date.now();
+  const oneDayAgo = now - 24 * 60 * 60 * 1000;
+
+  let activePaid = 0;
+  let activeTrial = 0;
+  let expired = 0;
+  let activeToday = 0;
+  let totalReferrals = 0;
+
+  for (const s of nonAdmin) {
+    totalReferrals += s.referralsCount || 0;
+    if (s.lastActiveAt && s.lastActiveAt > oneDayAgo) {
+      activeToday++;
+    }
+    const subExpires = s.subscriptionExpiresAt || 0;
+    const trialExpires = s.trialExpiresAt || (s.createdAt + 3 * 24 * 60 * 60 * 1000);
+    if (subExpires > now) {
+      activePaid++;
+    } else if (trialExpires > now) {
+      activeTrial++;
+    } else {
+      expired++;
+    }
+  }
+
+  return {
+    totalUsers: nonAdmin.length,
+    activeTrial,
+    activePaid,
+    expired,
+    activeToday,
+    totalReferrals,
+    subscribers: nonAdmin,
+  };
+}
+
 export async function listApprovedTelegramSubscribers(): Promise<TelegramSubscriber[]> {
   const binding = await getDb();
   if (!binding) return Array.from(memorySubscribers.values()).filter((s) => s.status === "approved");
