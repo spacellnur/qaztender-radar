@@ -2,15 +2,15 @@ import {
   consumeTelegramConnectToken, createOrUpdateTelegramSubscriber, createTenderNote,
   getCompanyProfile, getDbUserById, getTelegramFilter,
   getTelegramSubscriberByChatId, getTelegramSubscriberByUserId, getTenderById,
-  getTenderDetails, getTenderTask, getTenderTaskWorkspace, INDUSTRY_CATEGORIES,
-  IndustryCategory, isTenderDeliveredToUser, listApprovedTelegramSubscribers,
+  getTenderDetails, getTenderTask, getTenderTaskWorkspace, grantUserSubscription,
+  INDUSTRY_CATEGORIES, IndustryCategory, isTenderDeliveredToUser, listApprovedTelegramSubscribers,
   listTelegramSubscribers, listTenderNotes, listTenders, listTenderWorkflow,
   recordTelegramDelivery, saveTelegramFilter, saveTenderWorkflow, seedTenderTaskTemplate,
   updateTelegramSubscriberStatus, updateTenderTask
 } from "./db";
 import { localities } from "./localities";
 import { explainTenderMatch } from "./tender-matching";
-import type { CompanyProfile, TenderRecord, TenderStage } from "./tender-types";
+import type { CompanyProfile, TelegramSubscriber, TenderRecord, TenderStage } from "./tender-types";
 
 function getBotToken(): string {
   const env = (globalThis as unknown as { __QAZTENDER_ENV?: Record<string, string> }).__QAZTENDER_ENV;
@@ -20,6 +20,62 @@ function getBotToken(): string {
 export function getAdminChatId(): string {
   const env = (globalThis as unknown as { __QAZTENDER_ENV?: Record<string, string> }).__QAZTENDER_ENV;
   return process.env.ADMIN_TELEGRAM_CHAT_ID || env?.ADMIN_TELEGRAM_CHAT_ID || "964524397";
+}
+
+export function isSubActive(sub: TelegramSubscriber): { active: boolean; isTrial: boolean; daysLeft: number; expiresStr: string } {
+  const adminId = getAdminChatId();
+  if (sub.chatId === adminId) {
+    return { active: true, isTrial: false, daysLeft: 9999, expiresStr: "Бессрочно (Администратор)" };
+  }
+
+  const now = Date.now();
+  const subExpires = sub.subscriptionExpiresAt || 0;
+  const trialExpires = sub.trialExpiresAt || (sub.createdAt + 3 * 24 * 60 * 60 * 1000);
+
+  if (subExpires > now) {
+    const daysLeft = Math.ceil((subExpires - now) / 86400000);
+    const expiresStr = dateFormatter.format(subExpires);
+    return { active: true, isTrial: false, daysLeft, expiresStr };
+  }
+
+  if (trialExpires > now) {
+    const daysLeft = Math.ceil((trialExpires - now) / 86400000);
+    const expiresStr = dateFormatter.format(trialExpires);
+    return { active: true, isTrial: true, daysLeft, expiresStr };
+  }
+
+  const lastExpire = subExpires || trialExpires;
+  const expiresStr = dateFormatter.format(lastExpire);
+  return { active: false, isTrial: !subExpires, daysLeft: 0, expiresStr };
+}
+
+export function formatPaywallMessage(chatId: string | number, username?: string, firstName?: string) {
+  const userTag = username ? `@${username}` : (firstName || "Пользователь");
+  const waText = encodeURIComponent(`Здравствуйте! Оплатил подписку QazTender Radar (5000 ₸) на 1 месяц.\nМой Telegram: ${userTag} (ID: ${chatId})`);
+  const waUrl = `https://wa.me/77773828303?text=${waText}`;
+
+  const text = `🔒 <b>ВАШ БЕСПЛАТНЫЙ ПЕРИОД (3 ДНЯ) ЗАВЕРШЁН</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+    `Чтобы продолжить использовать <b>QazTender Radar</b>:\n` +
+    `• 🎯 Поиск тендеров по ключевым словам и вашему городу\n` +
+    `• 🚨 Мгновенные push-уведомления о новых лотах в Telegram\n` +
+    `• 📁 Персональная воронка стадий и чек-листы документов РК\n` +
+    `• ⏰ Напоминания о дедлайнах за 24 часа\n\n` +
+    `💳 <b>Стоимость подписки:</b> 5 000 ₸ / месяц (30 дней)\n\n` +
+    `📲 <b>Реквизиты Kaspi:</b>\n` +
+    `Номер: <code>87773828303</code> (Нурсултан А.)\n\n` +
+    `📸 <b>После оплаты отправьте чек на WhatsApp:</b>\n` +
+    `👉 <a href="${waUrl}">Отправить чек на WhatsApp (+7 777 382 83 03)</a>\n\n` +
+    `<i>После проверки чека администратор сразу активирует вам доступ на 1 месяц (30 дней)!</i>`;
+
+  const reply_markup = {
+    inline_keyboard: [
+      [{ text: "📲 Отправить чек в WhatsApp (+7 777 382 83 03)", url: waUrl }],
+      [{ text: "💬 Написать разработчику в TG (@mielonur)", url: "https://t.me/mielonur" }],
+      [{ text: "🔄 Проверить статус подписки", callback_data: "check_subscription" }],
+    ],
+  };
+
+  return { text, reply_markup };
 }
 
 export const MAIN_REPLY_KEYBOARD = {
@@ -349,7 +405,7 @@ export async function handleTelegramUpdate(update: {
 
       // Direct Telegram Onboarding without website requirement
       if (chatId === adminChatId) {
-        await sendTelegramMessage(chatId, `👑 <b>Здравствуйте, Главный Администратор!</b>\n━━━━━━━━━━━━━━━━━━━━\nВы авторизованы как Главный Администратор <b>QazTender Radar</b>.\n\n⚡ <b>Быстрые функции:</b>\n• <b>🎯 Мои тендеры</b> — подборка закупок по Туркестану и РК\n• <b>📁 Мои в работе</b> — воронка стадий и чек-листы документов\n• <b>🔥 Горящие тендеры</b> — срочные закупки перед дедлайном\n• <b>⚙️ Настроить фильтр</b> — выбор городов, отраслей и бюджета\n\n🔔 <i>Сюда автоматически поступают заявки новых пользователей на модерацию с кнопками одобрения.</i>`, {
+        await sendTelegramMessage(chatId, `👑 <b>Здравствуйте, Главный Администратор!</b>\n━━━━━━━━━━━━━━━━━━━━\nВы авторизованы как Главный Администратор <b>QazTender Radar</b>.\n\n⚡ <b>Быстрые функции:</b>\n• <b>🎯 Мои тендеры</b> — подборка закупок по Туркестану и РК\n• <b>📁 Мои в работе</b> — воронка стадий и чек-листы документов\n• <b>🔥 Горящие тендеры</b> — срочные закупки перед дедлайном\n• <b>⚙️ Настроить фильтр</b> — выбор городов, отраслей и бюджета\n• <b>📊 CRM База</b> — просмотр пользователей (/crm)\n\n🔔 <i>Сюда автоматически поступают заявки и регистрации новых пользователей с кнопками управления подпиской.</i>`, {
           reply_markup: MAIN_REPLY_KEYBOARD,
         });
         return { ok: true };
@@ -357,22 +413,24 @@ export async function handleTelegramUpdate(update: {
 
       const existing = await getTelegramSubscriberByChatId(chatId);
       if (existing) {
-        if (existing.status === "approved") {
-          await sendTelegramMessage(chatId, `✅ <b>Здравствуйте, ${tgUser.first_name || "партнёр"}!</b>\n━━━━━━━━━━━━━━━━━━━━\nВы успешно авторизованы в <b>QazTender Radar</b>. Вам доступны все функции:\n\n• 🎯 <b>Мои тендеры</b> — подборка по вашим фильтрам и региону\n• 📁 <b>Мои в работе</b> — персональная воронка стадий и чек-листы документов РК\n• 🔥 <b>Горящие тендеры</b> — срочные закупки перед дедлайном\n• ⚙️ <b>Настроить фильтр</b> — выбор города, отрасли и суммы\n\n<i>Воспользуйтесь кнопками меню внизу экрана:</i>`, {
+        const subCheck = isSubActive(existing);
+        if (subCheck.active) {
+          const typeBadge = subCheck.isTrial ? `🎁 Бесплатный период (осталось ${subCheck.daysLeft} дн. до ${subCheck.expiresStr})` : `💎 Подписка активна (до ${subCheck.expiresStr})`;
+          await sendTelegramMessage(chatId, `✅ <b>Здравствуйте, ${tgUser.first_name || "партнёр"}!</b>\n━━━━━━━━━━━━━━━━━━━━\nСтатус: <b>${typeBadge}</b>\n\nВам доступны все возможности QazTender Radar:\n• 🎯 <b>Мои тендеры</b> — подборка по вашим фильтрам и региону\n• 📁 <b>Мои в работе</b> — персональная воронка стадий и чек-листы документов РК\n• 🔥 <b>Горящие тендеры</b> — срочные закупки перед дедлайном\n• ⚙️ <b>Настроить фильтр</b> — выбор города, отрасли и суммы\n\n<i>Воспользуйтесь кнопками меню внизу экрана:</i>`, {
             reply_markup: MAIN_REPLY_KEYBOARD,
           });
-        } else if (existing.status === "pending") {
-          await sendTelegramMessage(chatId, `⏳ <b>Ваша заявка ожидает подтверждения Главным Администратором.</b>\n\nКак только администратор подтвердит доступ, вам сразу откроются поиск тендеров, персональные фильтры и воронка!`);
         } else {
-          await sendTelegramMessage(chatId, `⛔ <b>Ваш доступ к боту отклонён администратором.</b>`);
+          const pw = formatPaywallMessage(chatId, tgUser.username, tgUser.first_name);
+          await sendTelegramMessage(chatId, pw.text, { reply_markup: pw.reply_markup });
         }
       } else {
-        // Show clean introduction and application button (NO notification to admin yet, preventing spam!)
+        // Show clean introduction and application button
         userApplicationMode.set(chatId, { inProgress: true });
-        await sendTelegramMessage(chatId, `👋 <b>Добро пожаловать в QazTender Radar!</b>\n━━━━━━━━━━━━━━━━━━━━\nЭто закрытая платформа умного мониторинга Госзакупок РК и аналитики тендеров.\n\nДля получения доступа к системе нажмите кнопку <b>«📝 Подать заявку на доступ»</b> и отправьте краткую информацию о себе/компании.\n\n<i>Заявка будет направлена на рассмотрение Главному Администратору (@mielonur).</i>`, {
+        await sendTelegramMessage(chatId, `👋 <b>Добро пожаловать в QazTender Radar!</b>\n━━━━━━━━━━━━━━━━━━━━\nЭто закрытая платформа умного мониторинга Госзакупок РК и аналитики тендеров.\n\n🎁 <b>АКЦИЯ:</b> Заполните короткую анкету и получите <b>3 ДНЯ БЕСПЛАТНОГО ДОСТУПА</b> ко всем функциям и поиску тендеров!\n\n<i>Нажмите кнопку ниже для старта 👇</i>`, {
           reply_markup: {
             inline_keyboard: [
-              [{ text: "📝 Подать заявку на доступ", callback_data: "apply_access" }],
+              [{ text: "📝 Заполнить анкету (3 дня бесплатно)", callback_data: "apply_access" }],
+              [{ text: "💬 Написать разработчику (Тарифы)", url: "https://t.me/mielonur" }],
             ],
           },
         });
@@ -380,60 +438,82 @@ export async function handleTelegramUpdate(update: {
       return { ok: true };
     }
 
-    // Gate: check subscriber status for non-admin users
+    // Gate: check subscriber status & paywall for non-admin users
     if (chatId !== adminChatId) {
       const sub = await getTelegramSubscriberByChatId(chatId);
-      if (!sub || sub.status !== "approved") {
-        if (!sub) {
-          const userText = text.trim();
-          if (userText.length >= 6) {
-            // User submitted an actual application!
-            userApplicationMode.delete(chatId);
-            const userId = `tg_${chatId}`;
-            const userLabel = tgUser.username ? `@${tgUser.username}` : (tgUser.first_name || "Новый пользователь");
-            await createOrUpdateTelegramSubscriber({
-              userId,
-              chatId,
-              username: tgUser.username ?? "",
-              firstName: tgUser.first_name ?? "",
-              status: "pending",
-            });
+      if (!sub) {
+        const userText = text.trim();
+        if (userText.length >= 6) {
+          // User submitted an actual application -> GRANT 3-DAY FREE TRIAL!
+          userApplicationMode.delete(chatId);
+          const userId = `tg_${chatId}`;
+          const userLabel = tgUser.username ? `@${tgUser.username}` : (tgUser.first_name || "Новый пользователь");
+          const trialExpiresAt = Date.now() + 3 * 24 * 60 * 60 * 1000;
+          const trialDateStr = dateFormatter.format(trialExpiresAt);
 
-            await sendTelegramMessage(chatId, `✅ <b>Ваша заявка успешно принята!</b>\n━━━━━━━━━━━━━━━━━━━━\nДанные переданы Главному Администратору (@mielonur).\n\nОжидайте подтверждения — как только администратор одобрит доступ, бот сразу пришлёт вам уведомление с полным доступом к поиску!`);
+          await createOrUpdateTelegramSubscriber({
+            userId,
+            chatId,
+            username: tgUser.username ?? "",
+            firstName: tgUser.first_name ?? "",
+            companyInfo: userText,
+            status: "approved",
+            paymentStatus: "trial",
+            trialExpiresAt,
+          });
 
-            // Send full application to Admin
-            const dateStr = dateFormatter.format(Date.now());
-            const adminNotify = `📋 <b>НОВАЯ ЗАЯВКА НА ДОСТУП В QAZTENDER RADAR</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
-              `👤 <b>Пользователь:</b> ${userLabel} (ID: <code>${chatId}</code>)\n\n` +
-              `📝 <b>Анкета:</b>\n<i>${userText}</i>\n\n` +
-              `📅 <b>Дата:</b> ${dateStr}\n\n` +
-              `Одобрить доступ пользователю?`;
+          const welcomeTrialMsg = `🎉 <b>ДОБРО ПОЖАЛОВАТЬ В QAZTENDER RADAR!</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+            `Здравствуйте, <b>${tgUser.first_name || "партнёр"}</b>!\n\n` +
+            `🎁 Вам открыт <b>ПОЛНЫЙ ДОСТУП НА 3 ДНЯ БЕСПЛАТНО</b> (до <b>${trialDateStr}</b>)!\n\n` +
+            `Вам доступны все инструменты платформы:\n` +
+            `• 🎯 <b>Мои тендеры</b> — подборка закупок по вашим ключевым словам\n` +
+            `• ⚙️ <b>Настроить фильтр</b> — выбор региона, сферы и бюджета\n` +
+            `• 📁 <b>Мои в работе</b> — персональная воронка и чек-листы документов РК\n` +
+            `• 🔥 <b>Горящие тендеры</b> — топ срочных лотов перед дедлайном\n\n` +
+            `<i>Воспользуйтесь кнопками меню внизу экрана, чтобы начать:</i>`;
 
-            await sendTelegramMessage(adminChatId, adminNotify, {
-              reply_markup: {
-                inline_keyboard: [
-                  [
-                    { text: "✅ Одобрить доступ", callback_data: `approve_tg:${chatId}:${encodeURIComponent(userLabel)}` },
-                    { text: "❌ Отклонить", callback_data: `reject_tg:${chatId}:${encodeURIComponent(userLabel)}` },
-                  ],
+          await sendTelegramMessage(chatId, welcomeTrialMsg, { reply_markup: MAIN_REPLY_KEYBOARD });
+
+          // Notify Admin (CRM Lead) with 1-click subscription management buttons
+          const dateStr = dateFormatter.format(Date.now());
+          const adminNotify = `👤 <b>НОВЫЙ ПОЛЬЗОВАТЕЛЬ В БАЗЕ (3 ДНЯ ТРИАЛ)</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+            `👤 <b>Пользователь:</b> ${userLabel} (ID: <code>${chatId}</code>)\n` +
+            `🏢 <b>Анкета:</b>\n<i>${userText}</i>\n\n` +
+            `⏳ <b>Триал активен до:</b> ${trialDateStr}\n` +
+            `📅 <b>Дата:</b> ${dateStr}\n\n` +
+            `Управление подпиской:`;
+
+          await sendTelegramMessage(adminChatId, adminNotify, {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: "💳 Активировать на 1 месяц (5000 ₸)", callback_data: `grant_sub:${chatId}:30` },
+                  { text: "⏳ Продлить триал (+3 дня)", callback_data: `grant_sub:${chatId}:3` },
                 ],
-              },
-            });
-          } else {
-            // Short or random text — prompt to fill application
-            await sendTelegramMessage(chatId, `ℹ️ <b>Для получения доступа к системе заполните короткую анкету:</b>\n\nНажмите кнопку ниже и отправьте ваше имя, компанию, город и сферу тендеров:`, {
-              reply_markup: {
-                inline_keyboard: [
-                  [{ text: "📝 Подать заявку на доступ", callback_data: "apply_access" }],
-                ],
-              },
-            });
-          }
-        } else if (sub.status === "pending") {
-          await sendTelegramMessage(chatId, `⏳ <b>Ваша заявка ожидает подтверждения Главным Администратором.</b>\n\nКак только администратор подтвердит заявку, бот сразу пришлёт вам уведомление.`);
+              ],
+            },
+          });
+          return { ok: true };
         } else {
-          await sendTelegramMessage(chatId, `⛔ <b>Ваш доступ к боту отклонён администратором.</b>`);
+          // Short or random text — prompt to fill application
+          await sendTelegramMessage(chatId, `ℹ️ <b>Для получения бесплатного доступа на 3 дня заполните короткую анкету:</b>\n\nНапишите одним сообщением ваше имя, компанию, город и сферу тендеров:`, {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "📝 Заполнить анкету (3 дня бесплатно)", callback_data: "apply_access" }],
+                [{ text: "💬 Написать разработчику (Тарифы)", url: "https://t.me/mielonur" }],
+              ],
+            },
+          });
+          return { ok: true };
         }
+      }
+
+      // Check if trial or subscription is active
+      const subCheck = isSubActive(sub);
+      if (!subCheck.active) {
+        // Expired! Show paywall with Kaspi and WhatsApp details
+        const pw = formatPaywallMessage(chatId, tgUser.username, tgUser.first_name);
+        await sendTelegramMessage(chatId, pw.text, { reply_markup: pw.reply_markup });
         return { ok: true };
       }
     }
@@ -501,22 +581,75 @@ export async function handleTelegramUpdate(update: {
 
     if (text === "/status" || text === "📈 Мой статус") {
       if (chatId === adminChatId) {
-        await sendTelegramMessage(chatId, `👑 <b>Статус: Главный Администратор</b>\n━━━━━━━━━━━━━━━━━━━━\nChat ID: <code>${chatId}</code>\nДоступ: Полный административный\nЛимит запросов: Безлимитно\nМодерация заявок: Активна\n\n⚡ Нажимайте кнопки внизу для быстрого доступа к данным.`);
+        const subs = await listTelegramSubscribers();
+        const activeCount = subs.filter((s) => s.chatId !== adminChatId && isSubActive(s).active).length;
+        await sendTelegramMessage(chatId, `👑 <b>Статус: Главный Администратор</b>\n━━━━━━━━━━━━━━━━━━━━\nChat ID: <code>${chatId}</code>\nДоступ: Полный административный\nПользователей в базе: ${subs.length - 1} (активных: ${activeCount})\n\n⚡ <b>Команды управления:</b>\n• <code>/crm</code> или <code>/users</code> — база пользователей и подписок\n• <code>/grant CHAT_ID ДНИ</code> — выдать или продлить подписку\n• <code>/reapply_all</code> — запросить повторную анкету`);
         return { ok: true };
       }
 
       const existing = await getTelegramSubscriberByChatId(chatId);
       if (!existing) {
-        await sendTelegramMessage(chatId, `ℹ️ <b>Аккаунт не привязан.</b>\n\nВойдите в QazTender Radar и подключите бота через кнопку в профиле.`);
+        await sendTelegramMessage(chatId, `ℹ️ <b>Для использования бота заполните короткую анкету:</b>`, {
+          reply_markup: {
+            inline_keyboard: [[{ text: "📝 Заполнить анкету", callback_data: "apply_access" }]],
+          },
+        });
       } else {
-        const statusMap: Record<string, string> = {
-          approved: "✅ Активен (Одобрен администратором)",
-          pending: "⏳ На рассмотрении администратором",
-          rejected: "❌ Отклонен администратором",
-          paused: "⏸ Приостановлен",
-        };
-        await sendTelegramMessage(chatId, `📊 <b>Статус подписки:</b> ${statusMap[existing.status] || existing.status}\n\nЛимит запросов: ${rate.remaining}/${MAX_REQUESTS_PER_HOUR} в этот час\nМгновенные алерты: ${existing.instantEnabled ? "Вкл" : "Выкл"}\nДайджест: ${existing.digestEnabled ? "Вкл" : "Выкл"}\n\nНапишите /info для справки по боту.`);
+        const check = isSubActive(existing);
+        const typeBadge = check.active ? (check.isTrial ? `🎁 Бесплатный триал (осталось ${check.daysLeft} дн.)` : `💎 Платная подписка`) : `🔒 Срок истёк`;
+        await sendTelegramMessage(chatId, `📊 <b>ВАШ СТАТУС ПОДПИСКИ</b>\n━━━━━━━━━━━━━━━━━━━━\nСтатус: <b>${typeBadge}</b>\nДействует до: <b>${check.expiresStr}</b>\nЛимит запросов: ${rate.remaining}/${MAX_REQUESTS_PER_HOUR} в этот час\nМгновенные алерты: ${existing.instantEnabled ? "Вкл" : "Выкл"}\nДайджест: ${existing.digestEnabled ? "Вкл" : "Выкл"}\n\n<i>Для продления подписки нажмите «💼 Тарифы и связь».</i>`);
       }
+      return { ok: true };
+    }
+
+    if (text.startsWith("/grant")) {
+      if (chatId !== adminChatId) {
+        await sendTelegramMessage(chatId, "❌ Доступно только Главному Администратору.");
+        return { ok: true };
+      }
+      const parts = text.split(" ");
+      const targetChatId = parts[1]?.trim();
+      const days = parseInt(parts[2]?.trim() || "30", 10);
+      if (!targetChatId || isNaN(days)) {
+        await sendTelegramMessage(chatId, "ℹ️ Формат команды:\n<code>/grant CHAT_ID ДНИ</code>\nНапример:\n<code>/grant 777888999 30</code>");
+        return { ok: true };
+      }
+      const updated = await grantUserSubscription(targetChatId, days, tgUser.username || "admin");
+      if (!updated) {
+        await sendTelegramMessage(chatId, `❌ Пользователь с ID <code>${targetChatId}</code> не найден в базе.`);
+        return { ok: true };
+      }
+      const expStr = dateFormatter.format(updated.subscriptionExpiresAt || Date.now());
+      await sendTelegramMessage(chatId, `✅ <b>Подписка успешно активирована!</b>\nПользователь ID: <code>${targetChatId}</code>\nПродлено на: <b>${days} дн.</b> (до ${expStr})`);
+
+      await sendTelegramMessage(targetChatId, `🎉 <b>Ваша подписка на QazTender Radar успешно активирована!</b>\n━━━━━━━━━━━━━━━━━━━━\nСрок действия: <b>${days} дней</b> (до <b>${expStr}</b>).\n\nВам снова открыты все функции бота и мгновенные алерты!`, {
+        reply_markup: MAIN_REPLY_KEYBOARD,
+      });
+      return { ok: true };
+    }
+
+    if (text === "/crm" || text === "/users") {
+      if (chatId !== adminChatId) {
+        await sendTelegramMessage(chatId, "❌ Доступно только Главному Администратору.");
+        return { ok: true };
+      }
+      const subs = await listTelegramSubscribers();
+      const nonAdminSubs = subs.filter((s) => s.chatId !== adminChatId);
+      if (nonAdminSubs.length === 0) {
+        await sendTelegramMessage(chatId, "📊 В базе пока нет зарегистрированных пользователей.");
+        return { ok: true };
+      }
+      let report = `📊 <b>CRM БАЗА ПОЛЬЗОВАТЕЛЕЙ (${nonAdminSubs.length}):</b>\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      for (const [idx, s] of nonAdminSubs.slice(0, 15).entries()) {
+        const check = isSubActive(s);
+        const statusIcon = check.active ? (check.isTrial ? "⏳ Триал" : "✅ Оплачен") : "🔒 Истёк";
+        report += `<b>${idx + 1}. ${s.firstName || "Пользователь"}</b> (@${s.username || "нет_юзернейма"})\n` +
+          `• ID: <code>${s.chatId}</code>\n` +
+          `• Анкета: <i>${s.companyInfo || "Не указана"}</i>\n` +
+          `• Статус: <b>${statusIcon}</b> (до ${check.expiresStr}, ост. ${check.daysLeft} дн.)\n\n`;
+      }
+      report += `💡 <i>Продлить подписку:</i> <code>/grant CHAT_ID 30</code>`;
+      await sendTelegramMessage(chatId, report);
       return { ok: true };
     }
 
@@ -551,7 +684,7 @@ export async function handleTelegramUpdate(update: {
         return { ok: true };
       }
       const res = await broadcastReapplyRequestToAllUsers();
-      await sendTelegramMessage(chatId, `✅ <b>Запрос на повторное заполнение анкеты успешно отправлен ${res.notified} пользователям!</b>\n\nИх статус сброшен на «Ожидает заявки». Когда они отправят анкету, вам придут карточки с кнопками одобрения.`);
+      await sendTelegramMessage(chatId, `✅ <b>Запрос на повторное заполнение анкеты успешно отправлен ${res.notified} пользователям!</b>\n\nИх статус сброшен на «Ожидает заявки». Когда они отправят анкету, им будет выдан 3-дневный триал, а вам придет уведомление.`);
       return { ok: true };
     }
 
@@ -778,6 +911,51 @@ export async function handleTelegramUpdate(update: {
       userApplicationMode.set(fromId, { inProgress: true });
       await answerCallbackQuery(query.id);
       await sendTelegramMessage(fromId, `📋 <b>ОТПРАВЬТЕ ВАШИ ДАННЫЕ В ОТВЕТНОМ СООБЩЕНИИ:</b>\n━━━━━━━━━━━━━━━━━━━━\nПожалуйста, напишите одним сообщением:\n\n1️⃣ <b>Имя и компания:</b> (например, <i>Арман, ТОО «Туркестан Строй»</i>)\n2️⃣ <b>Город / регион:</b> (например, <i>Туркестан, Кентау, Шымкент</i>)\n3️⃣ <b>Интересующие сферы тендеров:</b> (например, <i>Строительство, IT, Товары, Охрана</i>)\n\n<i>Просто напишите сообщение ниже 👇</i>`);
+      return { ok: true };
+    }
+
+    // Check subscription status by user from paywall
+    if (data === "check_subscription") {
+      const sub = await getTelegramSubscriberByChatId(fromId);
+      if (!sub) {
+        await answerCallbackQuery(query.id, "Заполните анкету для начала", true);
+        return { ok: true };
+      }
+      const check = isSubActive(sub);
+      if (check.active) {
+        await answerCallbackQuery(query.id, `✅ Ваша подписка активна до ${check.expiresStr}!`, true);
+        await sendTelegramMessage(fromId, `🎉 <b>Ваша подписка активна!</b>\n━━━━━━━━━━━━━━━━━━━━\nСрок действия: до <b>${check.expiresStr}</b> (осталось ${check.daysLeft} дн.).\n\nВам доступны все разделы платформы:`, {
+          reply_markup: MAIN_REPLY_KEYBOARD,
+        });
+      } else {
+        await answerCallbackQuery(query.id, "🔒 Подписка ещё не подтверждена. Отправьте чек на WhatsApp: +7 777 382 83 03", true);
+      }
+      return { ok: true };
+    }
+
+    // Grant or extend subscription by admin via inline button
+    if (data.startsWith("grant_sub:")) {
+      if (fromId !== adminChatId) {
+        await answerCallbackQuery(query.id, "❌ Только Главный Администратор может продлевать подписку.", true);
+        return { ok: true };
+      }
+      const [, targetChatId, rawDays] = data.split(":");
+      const days = parseInt(rawDays || "30", 10);
+      const updated = await grantUserSubscription(targetChatId, days, "admin");
+      if (updated) {
+        const expStr = dateFormatter.format(updated.subscriptionExpiresAt || Date.now());
+        await answerCallbackQuery(query.id, `✅ Подписка активирована на ${days} дн. (до ${expStr})!`, true);
+        if (query.message) {
+          await editMessageReplyMarkup(query.message.chat.id, query.message.message_id, {
+            inline_keyboard: [[{ text: `✅ Подписка выдана (${days} дн. до ${expStr})`, callback_data: "done" }]],
+          });
+        }
+        await sendTelegramMessage(targetChatId, `🎉 <b>Ваша подписка на QazTender Radar активирована!</b>\n━━━━━━━━━━━━━━━━━━━━\nСрок действия: <b>${days} дней</b> (до <b>${expStr}</b>).\n\nВам снова открыт полный доступ ко всем функциям и push-уведомлениям!`, {
+          reply_markup: MAIN_REPLY_KEYBOARD,
+        });
+      } else {
+        await answerCallbackQuery(query.id, "❌ Пользователь не найден в базе.", true);
+      }
       return { ok: true };
     }
 

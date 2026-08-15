@@ -169,7 +169,14 @@ const SCHEMA_STATEMENTS = [
     chat_id text NOT NULL,
     username text DEFAULT '' NOT NULL,
     first_name text DEFAULT '' NOT NULL,
-    status text DEFAULT 'pending' NOT NULL,
+    company_info text DEFAULT '' NOT NULL,
+    city text DEFAULT '' NOT NULL,
+    industry text DEFAULT '' NOT NULL,
+    status text DEFAULT 'approved' NOT NULL,
+    payment_status text DEFAULT 'trial' NOT NULL,
+    trial_expires_at integer DEFAULT 0 NOT NULL,
+    subscription_expires_at integer,
+    last_active_at integer DEFAULT 0 NOT NULL,
     requested_at integer NOT NULL,
     approved_at integer,
     approved_by text,
@@ -237,7 +244,14 @@ async function ensureSchema(binding: D1Database): Promise<void> {
           chat_id text NOT NULL,
           username text DEFAULT '' NOT NULL,
           first_name text DEFAULT '' NOT NULL,
-          status text DEFAULT 'pending' NOT NULL,
+          company_info text DEFAULT '' NOT NULL,
+          city text DEFAULT '' NOT NULL,
+          industry text DEFAULT '' NOT NULL,
+          status text DEFAULT 'approved' NOT NULL,
+          payment_status text DEFAULT 'trial' NOT NULL,
+          trial_expires_at integer DEFAULT 0 NOT NULL,
+          subscription_expires_at integer,
+          last_active_at integer DEFAULT 0 NOT NULL,
           requested_at integer NOT NULL,
           approved_at integer,
           approved_by text,
@@ -248,6 +262,24 @@ async function ensureSchema(binding: D1Database): Promise<void> {
           updated_at integer NOT NULL,
           FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE NO ACTION ON DELETE CASCADE
         )`).run();
+      } catch {
+        void 0;
+      }
+    }
+
+    // Auto-migrate new CRM and subscription columns if upgrading an existing database
+    const subMigrations = [
+      "ALTER TABLE telegram_subscribers ADD COLUMN company_info text DEFAULT '' NOT NULL",
+      "ALTER TABLE telegram_subscribers ADD COLUMN city text DEFAULT '' NOT NULL",
+      "ALTER TABLE telegram_subscribers ADD COLUMN industry text DEFAULT '' NOT NULL",
+      "ALTER TABLE telegram_subscribers ADD COLUMN payment_status text DEFAULT 'trial' NOT NULL",
+      "ALTER TABLE telegram_subscribers ADD COLUMN trial_expires_at integer DEFAULT 0 NOT NULL",
+      "ALTER TABLE telegram_subscribers ADD COLUMN subscription_expires_at integer",
+      "ALTER TABLE telegram_subscribers ADD COLUMN last_active_at integer DEFAULT 0 NOT NULL",
+    ];
+    for (const mSql of subMigrations) {
+      try {
+        await binding.prepare(mSql).run();
       } catch {
         void 0;
       }
@@ -697,25 +729,37 @@ export async function getTelegramSubscriberByUserId(userId: string): Promise<Tel
   if (!binding) return memorySubscribers.get(userId) ?? null;
   const row = await binding.prepare("SELECT * FROM telegram_subscribers WHERE user_id = ?").bind(userId).first<{
     id: string; user_id: string; chat_id: string; username: string; first_name: string;
-    status: TelegramSubscriberStatus; requested_at: number; approved_at: number | null;
+    company_info?: string; city?: string; industry?: string;
+    status: TelegramSubscriberStatus; payment_status?: PaymentStatus;
+    trial_expires_at?: number; subscription_expires_at?: number | null; last_active_at?: number;
+    requested_at: number; approved_at: number | null;
     approved_by: string | null; digest_enabled: number; instant_enabled: number;
     deadlines_enabled: number; created_at: number; updated_at: number;
   }>();
   if (!row) return memorySubscribers.get(userId) ?? null;
+  const createdAt = row.created_at || Date.now();
+  const trialExpiresAt = row.trial_expires_at || (createdAt + 3 * 24 * 60 * 60 * 1000);
   return {
     id: row.id,
     userId: row.user_id,
     chatId: row.chat_id,
     username: row.username,
     firstName: row.first_name,
+    companyInfo: row.company_info || "",
+    city: row.city || "",
+    industry: row.industry || "",
     status: row.status,
+    paymentStatus: row.payment_status || "trial",
+    trialExpiresAt,
+    subscriptionExpiresAt: row.subscription_expires_at || null,
+    lastActiveAt: row.last_active_at || 0,
     requestedAt: row.requested_at,
     approvedAt: row.approved_at,
     approvedBy: row.approved_by,
     digestEnabled: Boolean(row.digest_enabled),
     instantEnabled: Boolean(row.instant_enabled),
     deadlinesEnabled: Boolean(row.deadlines_enabled),
-    createdAt: row.created_at,
+    createdAt,
     updatedAt: row.updated_at,
   };
 }
@@ -730,25 +774,37 @@ export async function getTelegramSubscriberByChatId(chatId: string): Promise<Tel
   }
   const row = await binding.prepare("SELECT * FROM telegram_subscribers WHERE chat_id = ?").bind(chatId).first<{
     id: string; user_id: string; chat_id: string; username: string; first_name: string;
-    status: TelegramSubscriberStatus; requested_at: number; approved_at: number | null;
+    company_info?: string; city?: string; industry?: string;
+    status: TelegramSubscriberStatus; payment_status?: PaymentStatus;
+    trial_expires_at?: number; subscription_expires_at?: number | null; last_active_at?: number;
+    requested_at: number; approved_at: number | null;
     approved_by: string | null; digest_enabled: number; instant_enabled: number;
     deadlines_enabled: number; created_at: number; updated_at: number;
   }>();
   if (!row) return null;
+  const createdAt = row.created_at || Date.now();
+  const trialExpiresAt = row.trial_expires_at || (createdAt + 3 * 24 * 60 * 60 * 1000);
   return {
     id: row.id,
     userId: row.user_id,
     chatId: row.chat_id,
     username: row.username,
     firstName: row.first_name,
+    companyInfo: row.company_info || "",
+    city: row.city || "",
+    industry: row.industry || "",
     status: row.status,
+    paymentStatus: row.payment_status || "trial",
+    trialExpiresAt,
+    subscriptionExpiresAt: row.subscription_expires_at || null,
+    lastActiveAt: row.last_active_at || 0,
     requestedAt: row.requested_at,
     approvedAt: row.approved_at,
     approvedBy: row.approved_by,
     digestEnabled: Boolean(row.digest_enabled),
     instantEnabled: Boolean(row.instant_enabled),
     deadlinesEnabled: Boolean(row.deadlines_enabled),
-    createdAt: row.created_at,
+    createdAt,
     updatedAt: row.updated_at,
   };
 }
@@ -758,7 +814,13 @@ export async function createOrUpdateTelegramSubscriber(params: {
   chatId: string;
   username?: string;
   firstName?: string;
+  companyInfo?: string;
+  city?: string;
+  industry?: string;
   status?: TelegramSubscriberStatus;
+  paymentStatus?: PaymentStatus;
+  trialExpiresAt?: number;
+  subscriptionExpiresAt?: number | null;
 }): Promise<TelegramSubscriber> {
   const binding = await getDb();
   const existing = await getTelegramSubscriberByUserId(params.userId);
@@ -766,10 +828,16 @@ export async function createOrUpdateTelegramSubscriber(params: {
   const id = existing?.id ?? crypto.randomUUID();
   const username = params.username ?? existing?.username ?? "";
   const firstName = params.firstName ?? existing?.firstName ?? "";
-  const status = params.status ?? existing?.status ?? "pending";
+  const companyInfo = params.companyInfo ?? existing?.companyInfo ?? "";
+  const city = params.city ?? existing?.city ?? "";
+  const industry = params.industry ?? existing?.industry ?? "";
+  const status = params.status ?? existing?.status ?? "approved";
+  const paymentStatus = params.paymentStatus ?? existing?.paymentStatus ?? "trial";
+  const trialExpiresAt = params.trialExpiresAt ?? existing?.trialExpiresAt ?? (now + 3 * 24 * 60 * 60 * 1000);
+  const subscriptionExpiresAt = params.subscriptionExpiresAt !== undefined ? params.subscriptionExpiresAt : (existing?.subscriptionExpiresAt ?? null);
   const requestedAt = existing?.requestedAt ?? now;
   const approvedAt = status === "approved" ? (existing?.approvedAt ?? now) : existing?.approvedAt ?? null;
-  const approvedBy = existing?.approvedBy ?? null;
+  const approvedBy = existing?.approvedBy ?? "system_trial";
 
   const subscriber: TelegramSubscriber = {
     id,
@@ -777,7 +845,14 @@ export async function createOrUpdateTelegramSubscriber(params: {
     chatId: params.chatId,
     username,
     firstName,
+    companyInfo,
+    city,
+    industry,
     status,
+    paymentStatus,
+    trialExpiresAt,
+    subscriptionExpiresAt,
+    lastActiveAt: now,
     requestedAt,
     approvedAt,
     approvedBy,
@@ -792,19 +867,62 @@ export async function createOrUpdateTelegramSubscriber(params: {
 
   if (binding) {
     await binding.prepare(`INSERT INTO telegram_subscribers (
-        id, user_id, chat_id, username, first_name, status, requested_at, approved_at,
-        approved_by, digest_enabled, instant_enabled, deadlines_enabled, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 1, ?, ?)
+        id, user_id, chat_id, username, first_name, company_info, city, industry,
+        status, payment_status, trial_expires_at, subscription_expires_at, last_active_at,
+        requested_at, approved_at, approved_by, digest_enabled, instant_enabled, deadlines_enabled,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 1, ?, ?)
       ON CONFLICT(user_id) DO UPDATE SET
         chat_id=excluded.chat_id, username=excluded.username, first_name=excluded.first_name,
-        status=excluded.status, approved_at=excluded.approved_at, updated_at=excluded.updated_at`)
+        company_info=CASE WHEN excluded.company_info != '' THEN excluded.company_info ELSE telegram_subscribers.company_info END,
+        city=CASE WHEN excluded.city != '' THEN excluded.city ELSE telegram_subscribers.city END,
+        industry=CASE WHEN excluded.industry != '' THEN excluded.industry ELSE telegram_subscribers.industry END,
+        status=excluded.status, payment_status=excluded.payment_status,
+        trial_expires_at=excluded.trial_expires_at, subscription_expires_at=excluded.subscription_expires_at,
+        last_active_at=excluded.last_active_at, approved_at=excluded.approved_at, updated_at=excluded.updated_at`)
       .bind(
-        id, params.userId, params.chatId, username, firstName, status, requestedAt,
+        id, params.userId, params.chatId, username, firstName, companyInfo, city, industry,
+        status, paymentStatus, trialExpiresAt, subscriptionExpiresAt, now, requestedAt,
         approvedAt, approvedBy, existing?.createdAt ?? now, now,
       ).run();
   }
 
   return subscriber;
+}
+
+export async function grantUserSubscription(chatIdOrUserId: string, days: number, adminUsername = "admin"): Promise<TelegramSubscriber | null> {
+  const binding = await getDb();
+  let sub = await getTelegramSubscriberByChatId(chatIdOrUserId);
+  if (!sub) {
+    sub = await getTelegramSubscriberByUserId(chatIdOrUserId);
+  }
+  if (!sub) return null;
+
+  const now = Date.now();
+  const currentExpiry = sub.subscriptionExpiresAt && sub.subscriptionExpiresAt > now ? sub.subscriptionExpiresAt : now;
+  const newExpiry = currentExpiry + days * 24 * 60 * 60 * 1000;
+
+  sub.subscriptionExpiresAt = newExpiry;
+  sub.paymentStatus = "active_paid";
+  sub.status = "approved";
+  sub.approvedAt = sub.approvedAt || now;
+  sub.approvedBy = adminUsername;
+  sub.updatedAt = now;
+
+  memorySubscribers.set(sub.userId, sub);
+
+  if (binding) {
+    await binding.prepare(`UPDATE telegram_subscribers SET
+        subscription_expires_at = ?,
+        payment_status = 'active_paid',
+        status = 'approved',
+        approved_at = COALESCE(approved_at, ?),
+        approved_by = ?,
+        updated_at = ?
+      WHERE user_id = ?`)
+      .bind(newExpiry, now, adminUsername, now, sub.userId).run();
+  }
+  return sub;
 }
 
 export async function updateTelegramSubscriberStatus(userId: string, status: TelegramSubscriberStatus, approvedBy?: string): Promise<boolean> {
@@ -832,26 +950,40 @@ export async function listTelegramSubscribers(): Promise<TelegramSubscriber[]> {
   if (!binding) return Array.from(memorySubscribers.values());
   const rows = await binding.prepare("SELECT * FROM telegram_subscribers ORDER BY created_at DESC").all<{
     id: string; user_id: string; chat_id: string; username: string; first_name: string;
-    status: TelegramSubscriberStatus; requested_at: number; approved_at: number | null;
+    company_info?: string; city?: string; industry?: string;
+    status: TelegramSubscriberStatus; payment_status?: PaymentStatus;
+    trial_expires_at?: number; subscription_expires_at?: number | null; last_active_at?: number;
+    requested_at: number; approved_at: number | null;
     approved_by: string | null; digest_enabled: number; instant_enabled: number;
     deadlines_enabled: number; created_at: number; updated_at: number;
   }>();
-  return rows.results.map((row) => ({
-    id: row.id,
-    userId: row.user_id,
-    chatId: row.chat_id,
-    username: row.username,
-    firstName: row.first_name,
-    status: row.status,
-    requestedAt: row.requested_at,
-    approvedAt: row.approved_at,
-    approvedBy: row.approved_by,
-    digestEnabled: Boolean(row.digest_enabled),
-    instantEnabled: Boolean(row.instant_enabled),
-    deadlinesEnabled: Boolean(row.deadlines_enabled),
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }));
+  return rows.results.map((row) => {
+    const createdAt = row.created_at || Date.now();
+    const trialExpiresAt = row.trial_expires_at || (createdAt + 3 * 24 * 60 * 60 * 1000);
+    return {
+      id: row.id,
+      userId: row.user_id,
+      chatId: row.chat_id,
+      username: row.username,
+      firstName: row.first_name,
+      companyInfo: row.company_info || "",
+      city: row.city || "",
+      industry: row.industry || "",
+      status: row.status,
+      paymentStatus: row.payment_status || "trial",
+      trialExpiresAt,
+      subscriptionExpiresAt: row.subscription_expires_at || null,
+      lastActiveAt: row.last_active_at || 0,
+      requestedAt: row.requested_at,
+      approvedAt: row.approved_at,
+      approvedBy: row.approved_by,
+      digestEnabled: Boolean(row.digest_enabled),
+      instantEnabled: Boolean(row.instant_enabled),
+      deadlinesEnabled: Boolean(row.deadlines_enabled),
+      createdAt,
+      updatedAt: row.updated_at,
+    };
+  });
 }
 
 export async function listApprovedTelegramSubscribers(): Promise<TelegramSubscriber[]> {

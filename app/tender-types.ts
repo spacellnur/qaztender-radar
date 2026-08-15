@@ -165,6 +165,7 @@ export type TenderNote = {
 };
 
 export type TelegramSubscriberStatus = "pending" | "approved" | "rejected" | "paused";
+export type PaymentStatus = "trial" | "active_paid" | "expired";
 
 export type TelegramSubscriber = {
   id: string;
@@ -172,7 +173,14 @@ export type TelegramSubscriber = {
   chatId: string;
   username: string;
   firstName: string;
+  companyInfo?: string;
+  city?: string;
+  industry?: string;
   status: TelegramSubscriberStatus;
+  paymentStatus: PaymentStatus;
+  trialExpiresAt: number;
+  subscriptionExpiresAt: number | null;
+  lastActiveAt?: number;
   requestedAt: number;
   approvedAt: number | null;
   approvedBy: string | null;
@@ -182,5 +190,6 @@ export type TelegramSubscriber = {
   createdAt: number;
   updatedAt: number;
 };
+
 
 
