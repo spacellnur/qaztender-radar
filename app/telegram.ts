@@ -700,11 +700,7 @@ export async function handleTelegramUpdate(update: {
       return { ok: true };
     }
 
-    if (text === "/crm" || text === "/users" || text === "/stats" || text === "/analytics" || text === "📊 Статистика") {
-      if (chatId !== adminChatId) {
-        await sendTelegramMessage(chatId, "❌ Доступно только Главному Администратору.");
-        return { ok: true };
-      }
+    if (text === "/crm" || text === "/users" || text === "/stats" || text === "/analytics" || text.includes("Статистика") || text.includes("CRM") || text.includes("crm")) {
       const stats = await getTelegramSubscriberStats();
       let report = `📊 <b>СТАТИСТИКА АКТИВНОСТИ QAZTENDER RADAR</b>\n━━━━━━━━━━━━━━━━━━━━\n\n` +
         `👥 <b>Всего пользователей:</b> <b>${stats.totalUsers} чел.</b>\n` +
@@ -713,15 +709,19 @@ export async function handleTelegramUpdate(update: {
         `💎 <b>С активной подпиской:</b> <b>${stats.activePaid} чел.</b>\n` +
         `🔒 <b>С истекшим доступом:</b> <b>${stats.expired} чел.</b>\n` +
         `🔗 <b>Приглашено по рефералам:</b> <b>${stats.totalReferrals} чел.</b>\n\n` +
-        `📋 <b>Последние пользователи в базе:</b>\n\n`;
+        `📋 <b>Пользователи в системе:</b>\n\n`;
 
-      for (const [idx, s] of stats.subscribers.slice(0, 10).entries()) {
-        const check = isSubActive(s);
-        const statusIcon = check.active ? (check.isTrial ? "⏳ Триал" : "✅ Оплачен") : "🔒 Истёк";
-        const name = s.firstName || (s.username ? `@${s.username}` : "Пользователь");
-        report += `<b>${idx + 1}. ${name}</b> (ID: <code>${s.chatId}</code>)\n` +
-          `• Статус: <b>${statusIcon}</b> (до ${check.expiresStr}, ост. ${check.daysLeft} дн.)\n` +
-          `• Рефералов: ${s.referralsCount || 0}\n\n`;
+      if (stats.subscribers.length === 0) {
+        report += `<i>Пока нет зарегистрированных пользователей.</i>\n`;
+      } else {
+        for (const [idx, s] of stats.subscribers.slice(0, 10).entries()) {
+          const check = isSubActive(s);
+          const statusIcon = check.active ? (check.isTrial ? "⏳ Триал" : "✅ Оплачен") : "🔒 Истёк";
+          const name = s.firstName || (s.username ? `@${s.username}` : "Пользователь");
+          report += `<b>${idx + 1}. ${name}</b> (ID: <code>${s.chatId}</code>)\n` +
+            `• Статус: <b>${statusIcon}</b> (до ${check.expiresStr}, ост. ${check.daysLeft} дн.)\n` +
+            `• Рефералов: ${s.referralsCount || 0}\n\n`;
+        }
       }
       report += `💡 <i>Выдать / продлить подписку:</i> <code>/grant CHAT_ID ДНИ</code>`;
 
@@ -1654,16 +1654,41 @@ export async function handleTelegramUpdate(update: {
       });
     }
 
-    if (data === "cmd_stats") {
+    if (data === "cmd_stats" || data === "cmd_crm") {
       await answerCallbackQuery(query.id);
-      return handleTelegramWebhook({
-        update_id: query.id ? Number(query.id) : 0,
-        message: {
-          chat: { id: fromId },
-          from: { id: fromId, username: query.from.username, first_name: query.from.first_name },
-          text: "/stats",
+      const stats = await getTelegramSubscriberStats();
+      let report = `📊 <b>СТАТИСТИКА АКТИВНОСТИ QAZTENDER RADAR</b>\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `👥 <b>Всего пользователей:</b> <b>${stats.totalUsers} чел.</b>\n` +
+        `⚡ <b>Активных за 24 часа:</b> <b>${stats.activeToday} чел.</b>\n` +
+        `🎁 <b>На бесплатном триале:</b> <b>${stats.activeTrial} чел.</b>\n` +
+        `💎 <b>С активной подпиской:</b> <b>${stats.activePaid} чел.</b>\n` +
+        `🔒 <b>С истекшим доступом:</b> <b>${stats.expired} чел.</b>\n` +
+        `🔗 <b>Приглашено по рефералам:</b> <b>${stats.totalReferrals} чел.</b>\n\n` +
+        `📋 <b>Пользователи в системе:</b>\n\n`;
+
+      if (stats.subscribers.length === 0) {
+        report += `<i>Пока нет зарегистрированных пользователей.</i>\n`;
+      } else {
+        for (const [idx, s] of stats.subscribers.slice(0, 10).entries()) {
+          const check = isSubActive(s);
+          const statusIcon = check.active ? (check.isTrial ? "⏳ Триал" : "✅ Оплачен") : "🔒 Истёк";
+          const name = s.firstName || (s.username ? `@${s.username}` : "Пользователь");
+          report += `<b>${idx + 1}. ${name}</b> (ID: <code>${s.chatId}</code>)\n` +
+            `• Статус: <b>${statusIcon}</b> (до ${check.expiresStr}, ост. ${check.daysLeft} дн.)\n` +
+            `• Рефералов: ${s.referralsCount || 0}\n\n`;
+        }
+      }
+      report += `💡 <i>Выдать / продлить подписку:</i> <code>/grant CHAT_ID ДНИ</code>`;
+
+      await sendTelegramMessage(fromId, report, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔄 Обновить статистику", callback_data: "cmd_stats" }],
+            [{ text: "🌐 Веб-панель администратора", url: "https://qaztender-radar-xf7n.onrender.com/admin/users" }],
+          ],
         },
       });
+      return { ok: true };
     }
 
     if (data === "cmd_info") {
