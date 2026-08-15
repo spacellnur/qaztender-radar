@@ -6,6 +6,9 @@ export async function POST(request: Request) {
     const result = await handleTelegramUpdate(update);
     return Response.json(result);
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "Internal error" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Internal error";
+    const stack = error instanceof Error ? error.stack : "";
+    console.error("❌ Telegram Webhook Error:", message, stack);
+    return Response.json({ error: message, stack }, { status: 500 });
   }
 }
