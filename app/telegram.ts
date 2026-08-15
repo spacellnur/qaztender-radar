@@ -4,8 +4,8 @@ import {
   getTelegramSubscriberByChatId, getTelegramSubscriberByUserId, getTenderById,
   getTenderDetails, getTenderTask, getTenderTaskWorkspace, INDUSTRY_CATEGORIES,
   IndustryCategory, isTenderDeliveredToUser, listApprovedTelegramSubscribers,
-  listTenderNotes, listTenders, listTenderWorkflow, recordTelegramDelivery,
-  saveTelegramFilter, saveTenderWorkflow, seedTenderTaskTemplate,
+  listTelegramSubscribers, listTenderNotes, listTenders, listTenderWorkflow,
+  recordTelegramDelivery, saveTelegramFilter, saveTenderWorkflow, seedTenderTaskTemplate,
   updateTelegramSubscriberStatus, updateTenderTask
 } from "./db";
 import { localities } from "./localities";
@@ -27,7 +27,7 @@ export const MAIN_REPLY_KEYBOARD = {
     [{ text: "🎯 Мои тендеры" }, { text: "📁 Мои в работе" }],
     [{ text: "🔥 Горящие тендеры" }, { text: "💎 Топ по бюджету" }],
     [{ text: "⚙️ Настроить фильтр" }, { text: "🔍 Найти тендер" }],
-    [{ text: "📈 Мой статус" }, { text: "ℹ️ Справка о системе" }],
+    [{ text: "💼 Тарифы и связь" }, { text: "ℹ️ Справка о системе" }],
   ],
   resize_keyboard: true,
   is_persistent: true,
@@ -520,6 +520,41 @@ export async function handleTelegramUpdate(update: {
       return { ok: true };
     }
 
+    if (text === "/pricing" || text === "/tariff" || text === "💼 Тарифы и связь" || text === "💬 Написать разработчику" || text === "/contact" || text === "/developer") {
+      const pricingMsg = `💼 <b>ТАРИФЫ И СВЯЗЬ С РАЗРАБОТЧИКОМ</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `<b>QazTender Radar</b> предлагает гибкие индивидуальные тарифы для поставщиков и тендерных специалистов:\n\n` +
+        `🔹 <b>Индивидуальный специалист / ИП:</b>\n` +
+        `• До 3 регионов поиска и алертов\n` +
+        `• Мгновенные push-уведомления о новых лотах в Telegram\n` +
+        `• Интерактивные чек-листы и персональная воронка\n\n` +
+        `🏢 <b>Компания / ТОО (Корпоративный):</b>\n` +
+        `• Мониторинг по всему Казахстану (все 20 регионов)\n` +
+        `• Многопользовательский доступ для вашей команды\n` +
+        `• Делегирование задач сотрудникам и заметки по лотам\n` +
+        `• Прямая интеграция с реестром Госзакупок goszakup.gov.kz\n\n` +
+        `🤝 <i>Нажмите кнопку ниже, чтобы написать разработчику в личные сообщения и обсудить стоимость и спец-условия:</i>`;
+
+      await sendTelegramMessage(chatId, pricingMsg, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "💬 Написать разработчику (@mielonur)", url: "https://t.me/mielonur" }],
+            [{ text: "📝 Подать заявку на доступ", callback_data: "apply_access" }],
+          ],
+        },
+      });
+      return { ok: true };
+    }
+
+    if (text === "/reapply_all" || text === "/reset_users") {
+      if (chatId !== adminChatId) {
+        await sendTelegramMessage(chatId, "❌ Доступно только Главному Администратору.");
+        return { ok: true };
+      }
+      const res = await broadcastReapplyRequestToAllUsers();
+      await sendTelegramMessage(chatId, `✅ <b>Запрос на повторное заполнение анкеты успешно отправлен ${res.notified} пользователям!</b>\n\nИх статус сброшен на «Ожидает заявки». Когда они отправят анкету, вам придут карточки с кнопками одобрения.`);
+      return { ok: true };
+    }
+
     if (text === "/info" || text === "ℹ️ Инфо" || text === "ℹ️ О системе" || text === "ℹ️ Справка о системе") {
       const infoMsg = `ℹ️ <b>О СИСТЕМЕ QAZTENDER RADAR</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
         `<b>QazTender Radar</b> — радар и рабочее место для тендерных специалистов и поставщиков в Казахстане (Госзакупки goszakup.gov.kz).\n\n` +
@@ -533,6 +568,7 @@ export async function handleTelegramUpdate(update: {
       await sendTelegramMessage(chatId, infoMsg, {
         reply_markup: {
           inline_keyboard: [
+            [{ text: "💬 Написать разработчику (@mielonur)", url: "https://t.me/mielonur" }],
             [{ text: "🔥 Горящие тендеры", callback_data: "cmd_hot" }, { text: "💎 Топ по бюджету", callback_data: "cmd_top" }],
             [{ text: "📊 Сводка дня", callback_data: "cmd_digest" }],
           ],
@@ -1350,3 +1386,33 @@ export async function checkAndSendDeadlineAlerts(): Promise<{ delivered: number 
 
   return { delivered };
 }
+
+export async function broadcastReapplyRequestToAllUsers(): Promise<{ notified: number }> {
+  const subscribers = await listTelegramSubscribers();
+  const adminChatId = getAdminChatId();
+  let notified = 0;
+
+  for (const sub of subscribers) {
+    if (sub.chatId === adminChatId) continue;
+    await updateTelegramSubscriberStatus(sub.userId, "pending", "system");
+    const msg = `📢 <b>ОБНОВЛЕНИЕ ПЛАТФОРМЫ QAZTENDER RADAR</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+      `Здравствуйте, ${sub.firstName || "партнёр"}!\n\n` +
+      `Мы обновили систему модерации и запустили тарифные планы под разные масштабы компаний.\n\n` +
+      `Для подтверждения доступа, пожалуйста, заполните короткую анкету о себе/компании либо свяжитесь с разработчиком для выбора тарифа.\n\n` +
+      `Нажмите кнопку ниже 👇`;
+
+    const res = await sendTelegramMessage(sub.chatId, msg, {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "📝 Заполнить заявку на доступ", callback_data: "apply_access" }],
+          [{ text: "💬 Написать разработчику (Тарифы)", url: "https://t.me/mielonur" }],
+        ],
+      },
+    });
+    if (res.ok) {
+      notified++;
+    }
+  }
+  return { notified };
+}
+
