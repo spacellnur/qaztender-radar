@@ -1908,6 +1908,8 @@ export const INDUSTRY_CATEGORIES: Array<{
   { id: "medical", label: "💊 Медицина и фармацевтика", shortLabel: "Медицина и фарма", keywords: ["медицин", "лекарств", "фармацевт", "препарат", "шприц", "перчатк", "перевязочн", "бинт", "дезинфицирующ", "изделия мед", "медтехник"] },
 ];
 
+export type NotificationSchedule = "3times" | "morning" | "afternoon" | "evening" | "instant" | "off";
+
 export type TelegramUserFilter = {
   chatId: string;
   userId: string;
@@ -1917,6 +1919,7 @@ export type TelegramUserFilter = {
   constructionOnly: boolean;
   maxBudget: number;
   keywords: string[];
+  schedule: NotificationSchedule;
   updatedAt: number;
 };
 
@@ -1934,12 +1937,13 @@ export async function getTelegramFilter(chatId: string): Promise<TelegramUserFil
       constructionOnly: false,
       maxBudget: 0,
       keywords: [],
+      schedule: "3times",
       updatedAt: Date.now(),
     };
   }
   const row = await binding.prepare("SELECT * FROM telegram_filters WHERE chat_id = ?").bind(chatId).first<{
     chat_id: string; user_id: string; locality: string; category?: string; subject: string; construction_only: number;
-    max_budget: number; keywords: string; updated_at: number;
+    max_budget: number; keywords: string; schedule?: string; updated_at: number;
   }>();
   if (!row) {
     return {
@@ -1951,6 +1955,7 @@ export async function getTelegramFilter(chatId: string): Promise<TelegramUserFil
       constructionOnly: false,
       maxBudget: 0,
       keywords: [],
+      schedule: "3times",
       updatedAt: Date.now(),
     };
   }
@@ -1965,6 +1970,7 @@ export async function getTelegramFilter(chatId: string): Promise<TelegramUserFil
     constructionOnly: Boolean(row.construction_only),
     maxBudget: Number(row.max_budget),
     keywords: Array.isArray(keywords) ? keywords : [],
+    schedule: (row.schedule as NotificationSchedule) || "3times",
     updatedAt: Number(row.updated_at),
   };
 }
@@ -1976,25 +1982,28 @@ export async function saveTelegramFilter(filter: Partial<TelegramUserFilter> & {
     ...filter,
     updatedAt: Date.now(),
   };
+  memoryFilters.set(filter.chatId, updated);
   const binding = await getDb();
   if (!binding) {
-    memoryFilters.set(filter.chatId, updated);
     return updated;
   }
   try {
     await binding.prepare(`ALTER TABLE telegram_filters ADD COLUMN category text DEFAULT 'all' NOT NULL`).run();
   } catch {}
+  try {
+    await binding.prepare(`ALTER TABLE telegram_filters ADD COLUMN schedule text DEFAULT '3times' NOT NULL`).run();
+  } catch {}
 
-  await binding.prepare(`INSERT INTO telegram_filters (chat_id, user_id, locality, category, subject, construction_only, max_budget, keywords, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  await binding.prepare(`INSERT INTO telegram_filters (chat_id, user_id, locality, category, subject, construction_only, max_budget, keywords, schedule, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(chat_id) DO UPDATE SET
       user_id=excluded.user_id, locality=excluded.locality, category=excluded.category, subject=excluded.subject,
       construction_only=excluded.construction_only, max_budget=excluded.max_budget,
-      keywords=excluded.keywords, updated_at=excluded.updated_at`)
+      keywords=excluded.keywords, schedule=excluded.schedule, updated_at=excluded.updated_at`)
     .bind(
       updated.chatId, updated.userId, updated.locality, updated.category, updated.subject,
       updated.constructionOnly ? 1 : 0, updated.maxBudget,
-      JSON.stringify(updated.keywords), updated.updatedAt
+      JSON.stringify(updated.keywords), updated.schedule, updated.updatedAt
     ).run();
   return updated;
 }

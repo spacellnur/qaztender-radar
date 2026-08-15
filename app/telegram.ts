@@ -8,6 +8,7 @@ import {
   listTenderWorkflow, recordTelegramDelivery, rewardReferrer, saveTelegramFilter,
   saveTenderWorkflow, seedTenderTaskTemplate, touchTelegramSubscriberActivity,
   updateTelegramSubscriberStatus, updateTenderTask, verifyTelegramWebLoginCode,
+  NotificationSchedule,
 } from "./db";
 import {
   REGIONS,
@@ -172,22 +173,34 @@ export function checkSearchRateLimit(chatId: string | number): { allowed: boolea
   return { allowed: true, remaining: MAX_SEARCHES_PER_HOUR - timestamps.length, resetMinutes: 0 };
 }
 
+export const SCHEDULE_LABELS: Record<NotificationSchedule, string> = {
+  "3times": "⚡ 3 раза в день (09:00, 14:00, 19:00)",
+  "morning": "🌅 Только утром (~09:00)",
+  "afternoon": "☀️ Только в обед (~14:00)",
+  "evening": "🌆 Только вечером (~19:00)",
+  "instant": "🔔 Мгновенно о новых лотах",
+  "off": "🔕 Только вручную (без авто-сообщений)",
+};
+
 export async function sendFilterSettingsMessage(chatId: string | number) {
   const currentFilter = await getTelegramFilter(String(chatId));
   const locLabel = getLocalityLabel(currentFilter.locality);
   const catLabel = getCategoryLabel(currentFilter.category);
   const budgetLabel = currentFilter.maxBudget > 0 ? `До ${moneyFormatter.format(currentFilter.maxBudget)}` : "Любой";
+  const scheduleLabel = SCHEDULE_LABELS[currentFilter.schedule] || "⚡ 3 раза в день (09:00, 14:00, 19:00)";
 
-  const msg = `⚙️ <b>НАСТРОЙКИ ВАШЕГО ФИЛЬТРА ТЕНДЕРОВ</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
-    `📍 <b>Город / Район / Село:</b>\n👉 <code>${locLabel}</code>\n\n` +
+  const msg = `⚙️ <b>НАСТРОЙКИ ВАШЕГО ФИЛЬТРА И АВТО-УВЕДОМЛЕНИЙ</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+    `📍 <b>Регион / Город / Село:</b>\n👉 <code>${locLabel}</code>\n\n` +
     `📁 <b>Сфера деятельности / Ниша:</b>\n👉 <code>${catLabel}</code>\n\n` +
     `💰 <b>Бюджет:</b> ${budgetLabel}\n\n` +
-    `💡 <i>Нажмите кнопку ниже, чтобы изменить город, отрасль или бюджет:</i>`;
+    `⏰ <b>Авто-присылание новых тендеров:</b>\n👉 <code>${scheduleLabel}</code>\n\n` +
+    `💡 <i>Нажмите кнопку ниже, чтобы настроить параметры:</i>`;
 
   const buttons = [
-    [{ text: "📍 Сменить город / район", callback_data: "menu_locality" }],
+    [{ text: "📍 Сменить город / район / село", callback_data: "menu_locality" }],
     [{ text: "📁 Сменить сферу деятельности", callback_data: "menu_category" }],
     [{ text: currentFilter.maxBudget > 0 ? "💰 Бюджет: Ограничен" : "💰 Бюджет: Любой", callback_data: "menu_budget" }],
+    [{ text: "⏰ Время и частота уведомлений", callback_data: "menu_schedule" }],
     [{ text: "🎯 Показать подходящие тендеры", callback_data: "cmd_my_tenders" }],
   ];
 
@@ -1273,6 +1286,40 @@ export async function handleTelegramUpdate(update: {
       return { ok: true };
     }
 
+    // Menu schedule
+    if (data === "menu_schedule") {
+      await answerCallbackQuery(query.id);
+      const scheduleButtons = [
+        [{ text: "⚡ 3 раза в день (09:00, 14:00, 19:00) ★", callback_data: "set_sched:3times" }],
+        [{ text: "🌅 Только утром (~09:00)", callback_data: "set_sched:morning" }, { text: "☀️ В обед (~14:00)", callback_data: "set_sched:afternoon" }],
+        [{ text: "🌆 Только вечером (~19:00)", callback_data: "set_sched:evening" }, { text: "🔔 Мгновенно о новых", callback_data: "set_sched:instant" }],
+        [{ text: "🔕 Только вручную (без авто-сообщений)", callback_data: "set_sched:off" }],
+        [{ text: "⬅️ Назад в настройки", callback_data: "open_filter_menu" }],
+      ];
+      await sendTelegramMessage(fromId, `⏰ <b>НАСТРОЙКА ВРЕМЕНИ АВТО-УВЕДОМЛЕНИЙ:</b>\n━━━━━━━━━━━━━━━━━━━━\nБаза Госзакупок обновляется утром, в обед и вечером.\n\nВыберите, когда боту присылать вам персональную подборку свежих лотов:`, {
+        reply_markup: { inline_keyboard: scheduleButtons },
+      });
+      return { ok: true };
+    }
+
+    if (data.startsWith("set_sched:")) {
+      const sched = data.slice(10) as NotificationSchedule;
+      await saveTelegramFilter({ chatId: fromId, schedule: sched });
+      const label = SCHEDULE_LABELS[sched] || sched;
+      await answerCallbackQuery(query.id, `✅ Расписание сохранено: ${label}`, true);
+      await sendFilterSettingsMessage(fromId);
+      return { ok: true };
+    }
+
+    // Set budget
+    if (data.startsWith("set_budget:")) {
+      const budgetNum = Number(data.slice(11)) || 0;
+      await saveTelegramFilter({ chatId: fromId, maxBudget: budgetNum });
+      await answerCallbackQuery(query.id, budgetNum > 0 ? `✅ Бюджет до ${moneyFormatter.format(budgetNum)}` : "✅ Бюджет: Любой");
+      await sendFilterSettingsMessage(fromId);
+      return { ok: true };
+    }
+
     // Workflow Stage Menu
     if (data.startsWith("menu_stage:")) {
       const tenderId = data.slice(11);
@@ -1469,8 +1516,12 @@ export async function handleTelegramUpdate(update: {
       return { ok: true };
     }
 
-    if (data === "cmd_my_tenders" || data === "cmd_my" || data === "cmd_tenders") {
-      await answerCallbackQuery(query.id, "Подбираем тендеры...");
+    if (data.startsWith("cmd_my_tenders") || data.startsWith("cmd_my_page:") || data === "cmd_my" || data === "cmd_tenders") {
+      let offset = 0;
+      if (data.startsWith("cmd_my_page:")) {
+        offset = parseInt(data.slice(12), 10) || 0;
+      }
+      await answerCallbackQuery(query.id, offset > 0 ? `Загружаем лоты ${offset + 1}-${offset + 3}...` : "Подбираем тендеры...");
       const currentFilter = await getTelegramFilter(fromId);
       const tenders = await listTenders(500);
       const now = Date.now();
@@ -1485,26 +1536,51 @@ export async function handleTelegramUpdate(update: {
           const textToSearch = `${t.title} ${t.buyer} ${t.subjectType} ${t.methodName}`.toLowerCase();
           return cat.keywords.some((k) => textToSearch.includes(k));
         })
-        .filter((t) => !currentFilter.maxBudget || t.budget <= currentFilter.maxBudget)
-        .slice(0, 3);
+        .filter((t) => !currentFilter.maxBudget || t.budget <= currentFilter.maxBudget);
 
       let headerNote = "";
       if (matched.length === 0) {
-        matched = tenders.filter((t) => !t.endDate || t.endDate > now).slice(0, 3);
+        matched = tenders.filter((t) => !t.endDate || t.endDate > now);
         if (matched.length === 0) {
-          matched = tenders.slice(0, 3);
+          matched = tenders;
         }
         headerNote = `\n<i>(По вашему точному фильтру лотов сейчас нет, показываем ближайшие актуальные тендеры)</i>`;
       }
 
+      const totalMatched = matched.length;
+      const pageTenders = matched.slice(offset, offset + 3);
+      const nextOffset = offset + 3;
+      const hasMore = nextOffset < totalMatched;
+
       const locLabel = getLocalityLabel(currentFilter.locality);
       const catLabel = getCategoryLabel(currentFilter.category);
 
-      await sendTelegramMessage(fromId, `🎯 <b>ВАШИ ПОДХОДЯЩИЕ ТЕНДЕРЫ\n(${locLabel} • ${catLabel}):</b>${headerNote}\n━━━━━━━━━━━━━━━━━━━━`);
-      for (const tender of matched) {
+      const pageInfo = totalMatched > 3 ? ` [Лоты ${offset + 1}–${Math.min(offset + pageTenders.length, totalMatched)} из ${totalMatched}]` : "";
+      await sendTelegramMessage(fromId, `🎯 <b>ВАШИ ПОДХОДЯЩИЕ ТЕНДЕРЫ${pageInfo}\n(${locLabel} • ${catLabel}):</b>${headerNote}\n━━━━━━━━━━━━━━━━━━━━`);
+
+      for (const tender of pageTenders) {
         const card = formatTenderTelegramCard(tender);
         await sendTelegramMessage(fromId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
       }
+
+      const navButtons: Array<Array<{ text: string; callback_data: string }>> = [];
+      if (hasMore) {
+        navButtons.push([
+          { text: `➡️ Показать ещё 3 тендера (${totalMatched - nextOffset} ост.)`, callback_data: `cmd_my_page:${nextOffset}` }
+        ]);
+      } else if (totalMatched > 3) {
+        navButtons.push([
+          { text: "🔄 В начало списка", callback_data: "cmd_my_page:0" }
+        ]);
+      }
+      navButtons.push([
+        { text: "⚙️ Изменить фильтр", callback_data: "open_filter_menu" },
+        { text: "🔥 Горящие лоты", callback_data: "cmd_hot" },
+      ]);
+
+      await sendTelegramMessage(fromId, hasMore ? `👇 <i>Нажмите кнопку ниже, чтобы просмотреть следующие 3 тендера:</i>` : `✅ <i>Вы просмотрели все доступные лоты по этому запросу.</i>`, {
+        reply_markup: { inline_keyboard: navButtons },
+      });
       return { ok: true };
     }
 
@@ -1537,47 +1613,87 @@ export async function handleTelegramUpdate(update: {
       return { ok: true };
     }
 
-    if (data === "cmd_hot") {
-      await answerCallbackQuery(query.id, "Загружаем горящие тендеры...");
-      const tenders = await listTenders(100);
-      const now = Date.now();
-      let hot = tenders
-        .filter((t) => t.endDate && t.endDate > now)
-        .sort((a, b) => (a.endDate ?? 0) - (b.endDate ?? 0))
-        .slice(0, 3);
-
-      if (hot.length === 0) {
-        hot = tenders.slice(0, 3);
+    if (data.startsWith("cmd_hot") || data.startsWith("cmd_hot_page:")) {
+      let offset = 0;
+      if (data.startsWith("cmd_hot_page:")) {
+        offset = parseInt(data.slice(13), 10) || 0;
       }
+      await answerCallbackQuery(query.id, "Загружаем горящие тендеры...");
+      const tenders = await listTenders(200);
+      const now = Date.now();
+      const hot = tenders
+        .filter((t) => t.endDate && t.endDate > now)
+        .sort((a, b) => (a.endDate ?? 0) - (b.endDate ?? 0));
 
-      if (hot.length === 0) {
+      const pageHot = hot.slice(offset, offset + 3);
+      const nextOffset = offset + 3;
+      const hasMore = nextOffset < hot.length;
+
+      if (pageHot.length === 0) {
         await sendTelegramMessage(fromId, "ℹ️ На данный момент нет срочных активных объявлений.");
       } else {
-        await sendTelegramMessage(fromId, `🔥 <b>ТОП ГОРЯЩИХ ТЕНДЕРОВ (СКОРО ДЕДЛАЙН):</b>\n━━━━━━━━━━━━━━━━━━━━`);
-        for (const tender of hot) {
+        const pageInfo = hot.length > 3 ? ` [Лоты ${offset + 1}–${Math.min(offset + pageHot.length, hot.length)} из ${hot.length}]` : "";
+        await sendTelegramMessage(fromId, `🔥 <b>ТОП ГОРЯЩИХ ТЕНДЕРОВ (СКОРО ДЕДЛАЙН)${pageInfo}:</b>\n━━━━━━━━━━━━━━━━━━━━`);
+        for (const tender of pageHot) {
           const card = formatTenderTelegramCard(tender);
           await sendTelegramMessage(fromId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
         }
+
+        const navButtons: Array<Array<{ text: string; callback_data: string }>> = [];
+        if (hasMore) {
+          navButtons.push([
+            { text: `➡️ Показать ещё горящие (${hot.length - nextOffset} ост.)`, callback_data: `cmd_hot_page:${nextOffset}` }
+          ]);
+        }
+        navButtons.push([
+          { text: "🎯 Мои тендеры", callback_data: "cmd_my_tenders" },
+          { text: "💎 Топ по бюджету", callback_data: "cmd_top" },
+        ]);
+
+        await sendTelegramMessage(fromId, hasMore ? `👇 <i>Нажмите для просмотра следующих лотов:</i>` : `✅ <i>Конец списка горящих закупок.</i>`, {
+          reply_markup: { inline_keyboard: navButtons },
+        });
       }
       return { ok: true };
     }
 
-    if (data === "cmd_top") {
-      await answerCallbackQuery(query.id, "Загружаем топ тендеров...");
-      const tenders = await listTenders(100);
-      let top = [...tenders].sort((a, b) => b.budget - a.budget).slice(0, 3);
-      if (top.length === 0) {
-        top = tenders.slice(0, 3);
+    if (data.startsWith("cmd_top") || data.startsWith("cmd_top_page:")) {
+      let offset = 0;
+      if (data.startsWith("cmd_top_page:")) {
+        offset = parseInt(data.slice(13), 10) || 0;
       }
+      await answerCallbackQuery(query.id, "Загружаем топ тендеров...");
+      const tenders = await listTenders(200);
+      const top = [...tenders].sort((a, b) => b.budget - a.budget);
 
-      if (top.length === 0) {
+      const pageTop = top.slice(offset, offset + 3);
+      const nextOffset = offset + 3;
+      const hasMore = nextOffset < top.length;
+
+      if (pageTop.length === 0) {
         await sendTelegramMessage(fromId, "ℹ️ Тендеры ещё не загружены.");
       } else {
-        await sendTelegramMessage(fromId, `💎 <b>ТОП-3 КРУПНЕЙШИХ ТЕНДЕРА ПО БЮДЖЕТУ:</b>\n━━━━━━━━━━━━━━━━━━━━`);
-        for (const tender of top) {
+        const pageInfo = top.length > 3 ? ` [Лоты ${offset + 1}–${Math.min(offset + pageTop.length, top.length)} из ${top.length}]` : "";
+        await sendTelegramMessage(fromId, `💎 <b>ТОП КРУПНЕЙШИХ ТЕНДЕРОВ ПО БЮДЖЕТУ${pageInfo}:</b>\n━━━━━━━━━━━━━━━━━━━━`);
+        for (const tender of pageTop) {
           const card = formatTenderTelegramCard(tender);
           await sendTelegramMessage(fromId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
         }
+
+        const navButtons: Array<Array<{ text: string; callback_data: string }>> = [];
+        if (hasMore) {
+          navButtons.push([
+            { text: `➡️ Показать ещё (${top.length - nextOffset} ост.)`, callback_data: `cmd_top_page:${nextOffset}` }
+          ]);
+        }
+        navButtons.push([
+          { text: "🎯 Мои тендеры", callback_data: "cmd_my_tenders" },
+          { text: "🔥 Горящие", callback_data: "cmd_hot" },
+        ]);
+
+        await sendTelegramMessage(fromId, hasMore ? `👇 <i>Нажмите для просмотра следующих лотов:</i>` : `✅ <i>Конец списка топ-бюджетных закупок.</i>`, {
+          reply_markup: { inline_keyboard: navButtons },
+        });
       }
       return { ok: true };
     }
@@ -1869,6 +1985,104 @@ export async function broadcastReapplyRequestToAllUsers(): Promise<{ notified: n
     }
   }
   return { notified };
+}
+export async function checkAndSendScheduledDigests(): Promise<{ delivered: number }> {
+  const subscribers = await listApprovedTelegramSubscribers();
+  const adminChatId = getAdminChatId();
+  let delivered = 0;
+  const now = Date.now();
+
+  const almatyDate = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Almaty" }));
+  const hour = almatyDate.getHours();
+
+  // Determine current slot
+  let slot: "morning" | "afternoon" | "evening" | null = null;
+  if (hour >= 8 && hour <= 11) slot = "morning";
+  else if (hour >= 13 && hour <= 16) slot = "afternoon";
+  else if (hour >= 18 && hour <= 21) slot = "evening";
+
+  if (!slot) return { delivered: 0 };
+
+  const slotTitle = slot === "morning" ? "🌅 УТРЕННЯЯ ПОДБОРКА ТЕНДЕРОВ (09:00)" :
+    slot === "afternoon" ? "☀️ ОБЕДЕННАЯ СВОДКА ЗАКУПОК (14:00)" :
+    "🌆 ВЕЧЕРНИЙ ОТЧЁТ ПО ТЕНДЕРАМ (19:00)";
+
+  const targets = [...subscribers];
+  if (adminChatId && !targets.some((s) => s.chatId === adminChatId)) {
+    targets.push({
+      id: "admin",
+      userId: "admin",
+      chatId: adminChatId,
+      username: "admin",
+      firstName: "Admin",
+      status: "approved",
+      requestedAt: now,
+      approvedAt: now,
+      approvedBy: "system",
+      digestEnabled: true,
+      instantEnabled: true,
+      deadlinesEnabled: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  const allTenders = await listTenders(500);
+
+  for (const sub of targets) {
+    const filter = await getTelegramFilter(sub.chatId);
+    if (filter.schedule === "off") continue;
+
+    // Check if user's schedule matches current slot
+    const shouldSend = filter.schedule === "3times" || filter.schedule === slot;
+    if (!shouldSend) continue;
+
+    // Check delivery cooldown for this slot today
+    const slotKey = `slot_${slot}_${almatyDate.toISOString().slice(0, 10)}`;
+    const alreadySent = await isTenderDeliveredToUser(sub.userId, slotKey, "scheduled_digest");
+    if (alreadySent) continue;
+
+    const cat = INDUSTRY_CATEGORIES.find((c) => c.id === filter.category);
+    let matched = allTenders
+      .filter((t) => !t.endDate || t.endDate > now)
+      .filter((t) => matchesTenderLocation(filter.locality, t))
+      .filter((t) => {
+        if (!cat || !cat.keywords || cat.keywords.length === 0) return true;
+        if (cat.id === "construction" && t.isConstructionWork) return true;
+        const textToSearch = `${t.title} ${t.buyer} ${t.subjectType} ${t.methodName}`.toLowerCase();
+        return cat.keywords.some((k) => textToSearch.includes(k));
+      })
+      .filter((t) => !filter.maxBudget || t.budget <= filter.maxBudget)
+      .slice(0, 3);
+
+    if (matched.length === 0) {
+      matched = allTenders.filter((t) => !t.endDate || t.endDate > now).slice(0, 3);
+    }
+    if (matched.length === 0) continue;
+
+    const locLabel = getLocalityLabel(filter.locality);
+    const catLabel = getCategoryLabel(filter.category);
+
+    await sendTelegramMessage(sub.chatId, `🔔 <b>${slotTitle}</b>\n📍 <i>${locLabel} • ${catLabel}</i>\n━━━━━━━━━━━━━━━━━━━━`);
+    for (const tender of matched) {
+      const card = formatTenderTelegramCard(tender, null, undefined, sub.chatId === adminChatId);
+      await sendTelegramMessage(sub.chatId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
+    }
+
+    await sendTelegramMessage(sub.chatId, `💡 <i>Посмотреть больше лотов или изменить расписание:</i>`, {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "➡️ Показать ещё тендеры", callback_data: "cmd_my_page:3" }],
+          [{ text: "⚙️ Настроить фильтр и время", callback_data: "open_filter_menu" }],
+        ],
+      },
+    });
+
+    await recordTelegramDelivery(sub.userId, sub.chatId, slotKey, "scheduled_digest");
+    delivered++;
+  }
+
+  return { delivered };
 }
 
 export const handleTelegramWebhook = handleTelegramUpdate;
