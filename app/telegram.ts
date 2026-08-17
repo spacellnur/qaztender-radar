@@ -57,27 +57,62 @@ export function isSubActive(sub: TelegramSubscriber): { active: boolean; isTrial
   return { active: false, isTrial: !subExpires, daysLeft: 0, expiresStr };
 }
 
+export function parseCustomBudgetAmount(input: string): number | null {
+  const clean = input.toLowerCase().replace(/₸|тенге|тг|бюджет|до|сумма|максимум/gi, "").trim();
+  if (/^(0|любой|все|сброс|любая|без ограничений|все суммы)$/i.test(clean)) {
+    return 0;
+  }
+  // Billions (млрд, b, миллиард)
+  const billionMatch = clean.match(/^([\d.,]+)\s*(млрд|b|миллиард)/i);
+  if (billionMatch) {
+    const val = parseFloat(billionMatch[1].replace(",", "."));
+    if (!isNaN(val) && val > 0) return Math.round(val * 1_000_000_000);
+  }
+  // Millions (млн, m, миллион)
+  const millionMatch = clean.match(/^([\d.,]+)\s*(млн|m|миллион)/i);
+  if (millionMatch) {
+    const val = parseFloat(millionMatch[1].replace(",", "."));
+    if (!isNaN(val) && val > 0) return Math.round(val * 1_000_000);
+  }
+  // Thousands (тыс, k, тысяч)
+  const thousandMatch = clean.match(/^([\d.,]+)\s*(тыс|k|тысяч)/i);
+  if (thousandMatch) {
+    const val = parseFloat(thousandMatch[1].replace(",", "."));
+    if (!isNaN(val) && val > 0) return Math.round(val * 1_000);
+  }
+  // Plain numbers (e.g. "35 000 000" or "35000000")
+  const numericOnly = clean.replace(/\s+/g, "").replace(",", ".");
+  if (/^\d+(\.\d+)?$/.test(numericOnly)) {
+    const val = parseFloat(numericOnly);
+    if (!isNaN(val) && val >= 0) return Math.round(val);
+  }
+  return null;
+}
+
+export const pendingBudgetInput = new Map<string, number>();
+
 export function formatPaywallMessage(chatId: string | number, username?: string, firstName?: string) {
   const userTag = username ? `@${username}` : (firstName || "Пользователь");
-  const waText = encodeURIComponent(`Здравствуйте! Оплатил подписку QazTender Radar (5000 ₸) на 1 месяц.\nМой Telegram: ${userTag} (ID: ${chatId})`);
+  const waText = encodeURIComponent(`Здравствуйте! Хочу оплатить подписку на QazTender Radar.\nМой Telegram: ${userTag} (ID: ${chatId})`);
   const waUrl = `https://wa.me/77773828303?text=${waText}`;
 
-  const text = `🔒 <b>ВАШ БЕСПЛАТНЫЙ ПЕРИОД (3 ДНЯ) ЗАВЕРШЁН</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
-    `Чтобы продолжить использовать <b>QazTender Radar</b>:\n` +
-    `• 🎯 Поиск тендеров по ключевым словам и вашему городу\n` +
-    `• 🚨 Мгновенные push-уведомления о новых лотах в Telegram\n` +
-    `• 📁 Персональная воронка стадий и чек-листы документов РК\n` +
-    `• ⏰ Напоминания о дедлайнах за 24 часа\n\n` +
-    `💳 <b>Стоимость подписки:</b> 5 000 ₸ / месяц (30 дней)\n\n` +
-    `📲 <b>Реквизиты Kaspi:</b>\n` +
-    `Номер: <code>87773828303</code> (Нурсултан А.)\n\n` +
-    `📸 <b>После оплаты отправьте чек на WhatsApp:</b>\n` +
-    `👉 <a href="${waUrl}">Отправить чек на WhatsApp (+7 777 382 83 03)</a>\n\n` +
-    `<i>После проверки чека администратор сразу активирует вам доступ на 1 месяц (30 дней)!</i>`;
+  const text = `🔒 <b>ВАШ БЕСПЛАТНЫЙ ДОСТУП ЗАВЕРШЁН</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+    `Чтобы продолжить находить прибыльные закупки и выигрывать тендеры:\n\n` +
+    `💼 <b>ТАРИФНЫЕ ПЛАНЫ QAZTENDER RADAR:</b>\n` +
+    `🥉 <b>1 месяц (Стандарт)</b> — <code>14 990 ₸</code>\n` +
+    `🥈 <b>3 месяца (Выгодный -20%)</b> — <code>34 990 ₸</code> <i>(11 660 ₸/мес)</i>\n` +
+    `🥇 <b>12 месяцев (VIP Безлимит -45%)</b> — <code>99 000 ₸</code> <i>(8 250 ₸/мес + персональный менеджер)</i>\n\n` +
+    `📲 <b>Оплата через Kaspi Gold / Kaspi Pay:</b>\n` +
+    `Номер Kaspi: <code>87773828303</code> (Нурсултан А.)\n` +
+    `В назначении перевода укажите ваш ID: <code>${chatId}</code>\n\n` +
+    `💡 <i>Хотите продлить бесплатно? Пригласите коллегу по ссылке и получите <b>+3 дня</b> в подарок!</i>`;
 
   const reply_markup = {
     inline_keyboard: [
-      [{ text: "📲 Отправить чек в WhatsApp (+7 777 382 83 03)", url: waUrl }],
+      [{ text: "💳 Оплатить через Kaspi (Реквизиты)", callback_data: "pay_kaspi" }],
+      [{ text: "🧾 Я оплатил (Отправить чек)", callback_data: "submit_receipt" }],
+      [{ text: "🎁 Получить +3 дня бесплатно (Пригласить друга)", callback_data: "cmd_ref" }],
+      [{ text: "📲 Написать в WhatsApp (+7 777 382 83 03)", url: waUrl }],
       [{ text: "💬 Написать разработчику в TG (@mielonur)", url: "https://t.me/mielonur" }],
       [{ text: "🔄 Проверить статус подписки", callback_data: "check_subscription" }],
     ],
@@ -1015,6 +1050,54 @@ export async function handleTelegramUpdate(update: {
       return { ok: true };
     }
 
+    // Check if user is typing a custom budget amount (e.g. "35 млн", "500 тыс", "15000000", "любой")
+    const customBudget = parseCustomBudgetAmount(text);
+    if (customBudget !== null && (pendingBudgetInput.has(chatId) || /млн|млрд|тыс|₸|тенге|тг|бюджет|до/i.test(text) || /^\d{4,}$/.test(text.replace(/\s+/g, "")))) {
+      pendingBudgetInput.delete(chatId);
+      await saveTelegramFilter({ chatId, maxBudget: customBudget });
+      const budgetStr = customBudget > 0 ? `до ${moneyFormatter.format(customBudget)}` : "Любой бюджет (без ограничений)";
+      await sendTelegramMessage(chatId, `✅ <b>Бюджет успешно установлен:</b> <code>${budgetStr}</code>\n\n` +
+        `Теперь радар фильтрует закупки строго с учётом указанной максимальной суммы.`, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: `🎯 Показать тендеры (${budgetStr})`, callback_data: "cmd_my_tenders" }],
+            [{ text: "⚙️ В меню фильтра", callback_data: "open_filter_menu" }],
+          ]
+        }
+      });
+      return { ok: true };
+    }
+
+    // Check payment receipt submission in text
+    if (/оплатил|оплатила|перевел|перевела|чек|квитанция|чек об оплате/i.test(text)) {
+      const userTag = tgUser.username ? `@${tgUser.username}` : (tgUser.first_name || "Пользователь");
+      await sendTelegramMessage(chatId, `✅ <b>Спасибо! Ваше уведомление об оплате принято.</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `Администратор проверяет платеж и активирует вашу подписку в течение нескольких минут.\n\n` +
+        `<i>Для быстрой связи вы также можете отправить квитанцию в WhatsApp (+7 777 382 83 03) или в личные сообщения @mielonur.</i>`);
+
+      if (adminChatId) {
+        await sendTelegramMessage(adminChatId, `🔔 <b>СООБЩЕНИЕ ОБ ОПЛАТЕ ПОДПИСКИ</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+          `👤 <b>Пользователь:</b> ${userTag} (ID: <code>${chatId}</code>)\n` +
+          `💬 <b>Текст:</b> «${text}»\n` +
+          `📅 <b>Дата:</b> ${dateFormatter.format(Date.now())}\n\n` +
+          `Выберите срок для мгновенной активации:`, {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "🥉 1 мес (14 990 ₸)", callback_data: `approve_sub:${chatId}:1` },
+                { text: "🥈 3 мес (34 990 ₸)", callback_data: `approve_sub:${chatId}:3` },
+              ],
+              [
+                { text: "🥇 12 мес (99 000 ₸)", callback_data: `approve_sub:${chatId}:12` },
+                { text: "❌ Отклонить", callback_data: `reject_sub:${chatId}` },
+              ]
+            ]
+          }
+        });
+      }
+      return { ok: true };
+    }
+
     // Free text Smart Search
     const searchWords = text.trim().toLowerCase();
     if (searchWords.length >= 2 && !searchWords.startsWith("/")) {
@@ -1332,14 +1415,146 @@ export async function handleTelegramUpdate(update: {
     if (data === "menu_budget") {
       await answerCallbackQuery(query.id);
       const budgetButtons = [
+        [{ text: "✏️ Ввести свою сумму текстом (напр. 35 млн)", callback_data: "enter_custom_budget" }],
         [{ text: "Любой бюджет", callback_data: "set_budget:0" }],
         [{ text: "До 20 млн ₸", callback_data: "set_budget:20000000" }, { text: "До 50 млн ₸", callback_data: "set_budget:50000000" }],
         [{ text: "До 100 млн ₸", callback_data: "set_budget:100000000" }, { text: "До 500 млн ₸", callback_data: "set_budget:500000000" }],
         [{ text: "⬅️ Назад в настройки", callback_data: "open_filter_menu" }],
       ];
-      await sendTelegramMessage(fromId, `💰 <b>ВЫБЕРИТЕ ОГРАНИЧЕНИЕ ПО БЮДЖЕТУ:</b>`, {
+      await sendTelegramMessage(fromId, `💰 <b>НАСТРОЙКА БЮДЖЕТА ЗАКУПОК:</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `Вы можете выбрать готовый диапазон или нажать <b>«✏️ Ввести свою сумму»</b> и написать точную сумму в чат:`, {
         reply_markup: { inline_keyboard: budgetButtons },
       });
+      return { ok: true };
+    }
+
+    // Custom free-form budget input prompt
+    if (data === "enter_custom_budget") {
+      await answerCallbackQuery(query.id);
+      pendingBudgetInput.set(fromId, Date.now() + 5 * 60 * 1000);
+      await sendTelegramMessage(fromId, `✏️ <b>НАПИШИТЕ СУММУ БЮДЖЕТА В ЧАТ:</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `Вы можете написать сумму в любом удобном виде:\n\n` +
+        `• <code>35 млн</code> или <code>35 000 000</code>\n` +
+        `• <code>500 тыс</code> или <code>500 000</code>\n` +
+        `• <code>1.5 млрд</code>\n` +
+        `• <code>любой</code> или <code>0</code> (чтобы снять ограничение)\n\n` +
+        `👇 <i>Отправьте сообщение с нужной суммой прямо сейчас:</i>`, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "❌ Отмена", callback_data: "open_filter_menu" }]
+          ]
+        }
+      });
+      return { ok: true };
+    }
+
+    // Paywall: Kaspi details
+    if (data === "pay_kaspi") {
+      await answerCallbackQuery(query.id);
+      const payMsg = `💳 <b>ОПЛАТА ПОДПИСКИ QAZTENDER RADAR ЧЕРЕЗ KASPI</b>\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `💼 <b>ТАРИФНЫЕ ПЛАНЫ:</b>\n` +
+        `🥉 <b>1 месяц (Стандарт)</b> — <code>14 990 ₸</code>\n` +
+        `🥈 <b>3 месяца (Выгодный -20%)</b> — <code>34 990 ₸</code> <i>(11 660 ₸/мес)</i>\n` +
+        `🥇 <b>12 месяцев (VIP Безлимит -45%)</b> — <code>99 000 ₸</code> <i>(8 250 ₸/мес)</i>\n\n` +
+        `📲 <b>Реквизиты для перевода Kaspi Gold / Kaspi Pay:</b>\n` +
+        `• Номер: <code>87773828303</code> (Нурсултан А.)\n` +
+        `• В комментарии укажите ваш Telegram ID: <code>${fromId}</code>\n\n` +
+        `После совершения перевода нажмите кнопку <b>«🧾 Я оплатил (Отправить чек)»</b> ниже:`;
+
+      await sendTelegramMessage(fromId, payMsg, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🧾 Я оплатил (Отправить чек)", callback_data: "submit_receipt" }],
+            [{ text: "📲 Отправить чек в WhatsApp", url: `https://wa.me/77773828303?text=${encodeURIComponent(`Здравствуйте! Оплатил подписку на QazTender Radar. Мой ID: ${fromId}`)}` }],
+            [{ text: "💬 Написать разработчику в TG", url: "https://t.me/mielonur" }],
+            [{ text: "⬅️ Назад", callback_data: "cmd_pricing" }],
+          ]
+        }
+      });
+      return { ok: true };
+    }
+
+    // Paywall: User submits receipt notification
+    if (data === "submit_receipt") {
+      await answerCallbackQuery(query.id, "Заявка отправлена администратору!", true);
+      const userTag = query.from.username ? `@${query.from.username}` : (query.from.first_name || "Пользователь");
+
+      await sendTelegramMessage(fromId, `✅ <b>ВАША ЗАЯВКА НА АКТИВАЦИЮ ПРИНЯТА!</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `Администратор уже получил уведомление о вашей оплате.\n\n` +
+        `Вы также можете отправить скриншот чека разработчику:\n` +
+        `👉 Telegram: @mielonur\n` +
+        `👉 WhatsApp: +7 777 382 83 03\n\n` +
+        `<i>Доступ будет активирован в течение нескольких минут!</i>`);
+
+      if (adminChatId) {
+        await sendTelegramMessage(adminChatId, `🔔 <b>УВЕДОМЛЕНИЕ ОБ ОПЛАТЕ ПОДПИСКИ</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+          `👤 <b>Пользователь:</b> ${userTag} (ID: <code>${fromId}</code>)\n` +
+          `📅 <b>Дата:</b> ${dateFormatter.format(Date.now())}\n\n` +
+          `Выберите тариф для мгновенной активации подписки:`, {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "🥉 1 мес (14 990 ₸)", callback_data: `approve_sub:${fromId}:1` },
+                { text: "🥈 3 мес (34 990 ₸)", callback_data: `approve_sub:${fromId}:3` },
+              ],
+              [
+                { text: "🥇 12 мес (99 000 ₸)", callback_data: `approve_sub:${fromId}:12` },
+                { text: "❌ Отклонить", callback_data: `reject_sub:${fromId}` },
+              ]
+            ]
+          }
+        });
+      }
+      return { ok: true };
+    }
+
+    // Admin approves subscription
+    if (data.startsWith("approve_sub:")) {
+      const parts = data.split(":");
+      const targetChatId = parts[1];
+      const months = parseInt(parts[2] || "1", 10);
+
+      if (fromId !== adminChatId) {
+        await answerCallbackQuery(query.id, "❌ Только администратор может одобрять подписки.", true);
+        return { ok: true };
+      }
+
+      const days = months * 30;
+      const updated = await grantUserSubscription(targetChatId, days, "admin");
+      await answerCallbackQuery(query.id, `✅ Подписка активирована на ${months} мес!`, true);
+
+      if (query.message?.message_id) {
+        await editTelegramMessageText(fromId, query.message.message_id, `✅ <b>ПОДПИСКА ОДОБРЕНА НА ${months} МЕСЯЦЕВ</b>\nПользователь ID: <code>${targetChatId}</code>`);
+      }
+
+      if (updated) {
+        const expStr = dateFormatter.format(updated.subscriptionExpiresAt || Date.now());
+        await sendTelegramMessage(targetChatId, `🎉 <b>ВАША ПОДПИСКА НА QAZTENDER RADAR АКТИВИРОВАНА!</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+          `Тариф: <b>${months} мес.</b> (до <b>${expStr}</b>)\n\n` +
+          `Вам снова открыт полный безлимитный доступ:\n` +
+          `• 🎯 Персональный подбор закупок по вашим городам и нишам\n` +
+          `• ⏰ Утренние, обеденные и вечерние рассылки новых лотов\n` +
+          `• 📁 Управление стадиями и чек-листами документов РК\n` +
+          `• 🔥 Мониторинг горящих лотов перед дедлайном\n\n` +
+          `<i>Приятной и прибыльной работы! 🚀</i>`, {
+          reply_markup: MAIN_INLINE_MENU,
+        });
+      }
+      return { ok: true };
+    }
+
+    // Admin rejects subscription
+    if (data.startsWith("reject_sub:")) {
+      const targetChatId = data.split(":")[1];
+      if (fromId !== adminChatId) {
+        await answerCallbackQuery(query.id, "❌ Доступ запрещен.", true);
+        return { ok: true };
+      }
+      await answerCallbackQuery(query.id, "❌ Заявка отклонена.");
+      if (query.message?.message_id) {
+        await editTelegramMessageText(fromId, query.message.message_id, `❌ <b>Заявка на оплату отклонена</b> (ID: <code>${targetChatId}</code>)`);
+      }
+      await sendTelegramMessage(targetChatId, `⚠️ <b>Ваша заявка на оплату не подтверждена.</b>\n\nЕсли вы совершили перевод, пожалуйста, свяжитесь напрямую с разработчиком @mielonur или в WhatsApp: +7 777 382 83 03.`);
       return { ok: true };
     }
 
@@ -2266,6 +2481,63 @@ export async function checkAndSendScheduledDigests(): Promise<{ delivered: numbe
   }
 
   return { delivered };
+}
+
+export async function checkAndSendSubscriptionWarnings(): Promise<{ warned: number; paywalled: number }> {
+  const subscribers = await listApprovedTelegramSubscribers();
+  const adminChatId = getAdminChatId();
+  let warned = 0;
+  let paywalled = 0;
+  const almatyDate = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Almaty" }));
+  const todayKey = almatyDate.toISOString().slice(0, 10);
+
+  for (const sub of subscribers) {
+    if (sub.chatId === adminChatId) continue;
+    const subCheck = isSubActive(sub);
+
+    // 1. Expiring soon (1 day left / between 0 and 24 hours left)
+    if (subCheck.active && subCheck.daysLeft <= 1) {
+      const warnKey = `warn_expiring_24h_${todayKey}`;
+      const alreadyWarned = await isTenderDeliveredToUser(sub.userId, warnKey, "subscription_warning");
+      if (!alreadyWarned) {
+        const warnMsg = `⏳ <b>ВАШ ДОСТУП В QAZTENDER RADAR ЗАКАНЧИВАЕТСЯ СКОРО!</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+          `Здравствуйте, <b>${sub.firstName || "партнёр"}</b>!\n\n` +
+          `Срок вашего доступа истекает <b>${subCheck.expiresStr}</b>.\n\n` +
+          `Чтобы не потерять утренние и вечерние рассылки свежих тендеров по вашим городам:\n` +
+          `• Продлите подписку со скидкой через Kaspi\n` +
+          `• Либо пригласите коллегу по реферальной ссылке и получите <b>+3 дня бесплатно</b>!\n\n` +
+          `<i>Выберите действие ниже:</i>`;
+
+        const buttons = [
+          [{ text: "💳 Продлить подписку (Kaspi)", callback_data: "pay_kaspi" }],
+          [{ text: "🎁 Получить +3 дня за друга", callback_data: "cmd_ref" }],
+          [{ text: "💬 Написать разработчику (@mielonur)", url: "https://t.me/mielonur" }],
+        ];
+
+        const res = await sendTelegramMessage(sub.chatId, warnMsg, { reply_markup: { inline_keyboard: buttons } });
+        if (res.ok) {
+          await recordTelegramDelivery(sub.userId, sub.chatId, warnKey, "subscription_warning");
+          warned++;
+        }
+      }
+    }
+
+    // 2. Already Expired (Trial / Subscription ended)
+    if (!subCheck.active) {
+      const expiredKey = `paywall_notice_${todayKey}`;
+      const alreadyNotified = await isTenderDeliveredToUser(sub.userId, expiredKey, "paywall_notice");
+      if (!alreadyNotified) {
+        const pw = formatPaywallMessage(sub.chatId, sub.username, sub.firstName);
+        const res = await sendTelegramMessage(sub.chatId, pw.text, { reply_markup: pw.reply_markup });
+        if (res.ok) {
+          await recordTelegramDelivery(sub.userId, sub.chatId, expiredKey, "paywall_notice");
+          paywalled++;
+        }
+      }
+    }
+  }
+
+  return { warned, paywalled };
 }
 
 export const handleTelegramWebhook = handleTelegramUpdate;
