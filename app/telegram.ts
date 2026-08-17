@@ -8,7 +8,7 @@ import {
   listTenderWorkflow, recordTelegramDelivery, rewardReferrer, saveTelegramFilter,
   saveTenderWorkflow, seedTenderTaskTemplate, touchTelegramSubscriberActivity,
   updateTelegramSubscriberStatus, updateTenderTask, verifyTelegramWebLoginCode,
-  NotificationSchedule,
+  NotificationSchedule, matchesIndustryCategory,
 } from "./db";
 import {
   REGIONS,
@@ -1582,17 +1582,11 @@ export async function handleTelegramUpdate(update: {
       const currentFilter = await getTelegramFilter(fromId);
       const tenders = await listTenders(500);
       const now = Date.now();
-      const cat = INDUSTRY_CATEGORIES.find((c) => c.id === currentFilter.category);
 
-      let matched = tenders
+      const matched = tenders
         .filter((t) => !t.endDate || t.endDate > now)
         .filter((t) => matchesTenderLocation(currentFilter.locality, t))
-        .filter((t) => {
-          if (!cat || !cat.keywords || cat.keywords.length === 0) return true;
-          if (cat.id === "construction" && t.isConstructionWork) return true;
-          const textToSearch = `${t.title} ${t.buyer} ${t.subjectType} ${t.methodName}`.toLowerCase();
-          return cat.keywords.some((k) => textToSearch.includes(k));
-        })
+        .filter((t) => matchesIndustryCategory(currentFilter.category, t))
         .filter((t) => !currentFilter.maxBudget || t.budget <= currentFilter.maxBudget);
 
       const locLabel = getLocalityLabel(currentFilter.locality);
@@ -1707,17 +1701,11 @@ export async function handleTelegramUpdate(update: {
       const currentFilter = await getTelegramFilter(fromId);
       const tenders = await listTenders(500);
       const now = Date.now();
-      const cat = INDUSTRY_CATEGORIES.find((c) => c.id === currentFilter.category);
 
       const matched = tenders
         .filter((t) => !t.endDate || t.endDate > now)
         .filter((t) => matchesTenderLocation(currentFilter.locality, t))
-        .filter((t) => {
-          if (!cat || !cat.keywords || cat.keywords.length === 0) return true;
-          if (cat.id === "construction" && t.isConstructionWork) return true;
-          const textToSearch = `${t.title} ${t.buyer} ${t.subjectType} ${t.methodName}`.toLowerCase();
-          return cat.keywords.some((k) => textToSearch.includes(k));
-        })
+        .filter((t) => matchesIndustryCategory(currentFilter.category, t))
         .filter((t) => !currentFilter.maxBudget || t.budget <= currentFilter.maxBudget);
 
       const totalMatched = matched.length;
@@ -2244,16 +2232,10 @@ export async function checkAndSendScheduledDigests(): Promise<{ delivered: numbe
     const alreadySent = await isTenderDeliveredToUser(sub.userId, slotKey, "scheduled_digest");
     if (alreadySent) continue;
 
-    const cat = INDUSTRY_CATEGORIES.find((c) => c.id === filter.category);
-    let matched = allTenders
+    const matched = allTenders
       .filter((t) => !t.endDate || t.endDate > now)
       .filter((t) => matchesTenderLocation(filter.locality, t))
-      .filter((t) => {
-        if (!cat || !cat.keywords || cat.keywords.length === 0) return true;
-        if (cat.id === "construction" && t.isConstructionWork) return true;
-        const textToSearch = `${t.title} ${t.buyer} ${t.subjectType} ${t.methodName}`.toLowerCase();
-        return cat.keywords.some((k) => textToSearch.includes(k));
-      })
+      .filter((t) => matchesIndustryCategory(filter.category, t))
       .filter((t) => !filter.maxBudget || t.budget <= filter.maxBudget)
       .slice(0, 3);
 
