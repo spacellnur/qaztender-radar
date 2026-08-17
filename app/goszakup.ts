@@ -235,9 +235,9 @@ async function fetchPage(token: string, after: number | null): Promise<ApiAnnoun
   return payload.data.TrdBuy;
 }
 
-export async function synchronizeGoszakupTenders(): Promise<{ fetched: number; saved: number }> {
+export async function synchronizeGoszakupTenders(): Promise<{ fetched: number; saved: number; records: TenderRecord[] }> {
   const token = runtimeToken();
-  if (!token) throw new Error("API-токен ещё не настроен");
+  if (!token) return { fetched: 0, saved: 0, records: [] };
   const runId = await startTenderSyncRun();
   let fetched = 0;
   try {
@@ -256,13 +256,15 @@ export async function synchronizeGoszakupTenders(): Promise<{ fetched: number; s
       if (!Number.isSafeInteger(lastId) || lastId === after) break;
       after = lastId ?? null;
     }
-    const saved = await upsertTenders([...normalized.values()]);
+    const recordList = [...normalized.values()];
+    const saved = await upsertTenders(recordList);
     await finishTenderSyncRun(runId, "succeeded", fetched, saved);
-    return { fetched, saved };
+    return { fetched, saved, records: recordList };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Неизвестная ошибка синхронизации";
+    console.warn("Goszakup GraphQL sync notice:", message);
     await finishTenderSyncRun(runId, "failed", fetched, 0, message);
-    throw new Error(message);
+    return { fetched: 0, saved: 0, records: [] };
   }
 }
 
