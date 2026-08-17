@@ -538,6 +538,23 @@ export async function handleTelegramUpdate(update: {
       return { ok: true };
     }
 
+    // Always ensure user/admin is registered in persistent database
+    const senderUserId = chatId === adminChatId ? "admin" : `tg_${chatId}`;
+    let currentSub = await getTelegramSubscriberByChatId(chatId);
+    if (!currentSub) {
+      currentSub = await createOrUpdateTelegramSubscriber({
+        userId: senderUserId,
+        chatId,
+        username: tgUser.username ?? "",
+        firstName: tgUser.first_name ?? "",
+        status: "approved",
+        paymentStatus: chatId === adminChatId ? "active_paid" : "trial",
+        trialExpiresAt: Date.now() + 3 * 24 * 60 * 60 * 1000,
+        subscriptionExpiresAt: chatId === adminChatId ? Date.now() + 3650 * 24 * 60 * 60 * 1000 : null,
+      });
+    }
+    await touchTelegramSubscriberActivity(senderUserId);
+
     if (text.startsWith("/start")) {
       const parts = text.split(" ");
       const token = parts[1]?.trim();
