@@ -2316,6 +2316,33 @@ export async function grantUserSubscription(chatIdOrUserId: string, days: number
   return sub;
 }
 
+export async function revokeTelegramSubscription(chatIdOrUserId: string): Promise<TelegramSubscriber | null> {
+  const binding = await getDb();
+  let sub = await getTelegramSubscriberByChatId(chatIdOrUserId);
+  if (!sub) {
+    sub = await getTelegramSubscriberByUserId(chatIdOrUserId);
+  }
+  if (!sub) return null;
+
+  const now = Date.now();
+  sub.subscriptionExpiresAt = now - 1000;
+  sub.trialExpiresAt = now - 1000;
+  sub.paymentStatus = "expired";
+  sub.updatedAt = now;
+  memorySubscribers.set(sub.userId, sub);
+
+  if (binding) {
+    await binding.prepare(`UPDATE telegram_subscribers SET
+        subscription_expires_at = ?,
+        trial_expires_at = ?,
+        payment_status = 'expired',
+        updated_at = ?
+      WHERE user_id = ?`)
+      .bind(sub.subscriptionExpiresAt, sub.trialExpiresAt, now, sub.userId).run();
+  }
+  return sub;
+}
+
 export async function updateTelegramSubscriberStatus(userId: string, status: TelegramSubscriberStatus, approvedBy?: string): Promise<boolean> {
   const binding = await getDb();
   const now = Date.now();

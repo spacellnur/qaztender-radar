@@ -3,7 +3,7 @@ import {
   createTenderNote, getCompanyProfile, getDbUserById, getTelegramFilter,
   getTelegramSubscriberByChatId, getTelegramSubscriberByUserId, getTelegramSubscriberStats,
   getTenderById, getTenderDetails, getTenderTask, getTenderTaskWorkspace,
-  grantUserSubscription, INDUSTRY_CATEGORIES, IndustryCategory, isTenderDeliveredToUser,
+  grantUserSubscription, revokeTelegramSubscription, INDUSTRY_CATEGORIES, IndustryCategory, isTenderDeliveredToUser,
   listApprovedTelegramSubscribers, listTelegramSubscribers, listTenderNotes, listTenders,
   listTenderWorkflow, recordTelegramDelivery, rewardReferrer, saveTelegramFilter,
   saveTenderWorkflow, seedTenderTaskTemplate, touchTelegramSubscriberActivity,
@@ -128,8 +128,9 @@ export const MAIN_INLINE_MENU = {
 
 export const ADMIN_INLINE_MENU = {
   inline_keyboard: [
-    [{ text: "📊 Статистика и CRM", callback_data: "cmd_stats" }, { text: "🎯 Мои тендеры", callback_data: "cmd_my_tenders" }],
-    [{ text: "🔥 Горящие лоты", callback_data: "cmd_hot" }, { text: "💎 Топ по сумме", callback_data: "cmd_top" }],
+    [{ text: "👑 Главная Админ-панель CRM", callback_data: "cmd_admin_panel" }],
+    [{ text: "💎 Платные клиенты", callback_data: "adm_list:paid" }, { text: "⏳ На триале", callback_data: "adm_list:trial" }],
+    [{ text: "🎯 Мои тендеры", callback_data: "cmd_my_tenders" }, { text: "🔥 Горящие лоты", callback_data: "cmd_hot" }],
     [{ text: "⚙️ Настроить фильтр", callback_data: "cmd_filter" }, { text: "🌐 Войти на сайт", callback_data: "cmd_web" }],
     [{ text: "🎁 Рефералы", callback_data: "cmd_ref" }, { text: "ℹ️ Справка", callback_data: "cmd_info" }],
   ],
@@ -139,14 +140,189 @@ export const MAIN_REPLY_KEYBOARD = {
   remove_keyboard: true,
 };
 
-function getLocalityLabel(val: string): string {
+export function getLocalityLabel(val: string): string {
   const item = localities.find((l) => l.value === val);
   return item ? item.label : "Все населённые пункты";
 }
 
-function getCategoryLabel(val: string): string {
+export function getCategoryLabel(val: string): string {
   const item = INDUSTRY_CATEGORIES.find((c) => c.id === val);
   return item ? item.label : "🌐 Все сферы деятельности";
+}
+
+export async function formatAdminDashboard() {
+  const stats = await getTelegramSubscriberStats();
+  const allSubs = stats.subscribers;
+  const adminId = getAdminChatId();
+  const clientSubs = allSubs.filter((s) => s.chatId !== adminId);
+
+  let paidCount = 0;
+  let trialCount = 0;
+  let expiredCount = 0;
+
+  for (const s of clientSubs) {
+    const check = isSubActive(s);
+    if (check.active) {
+      if (check.isTrial) trialCount++;
+      else paidCount++;
+    } else {
+      expiredCount++;
+    }
+  }
+
+  const text = `👑 <b>ГЛАВНАЯ АДМИН-ПАНЕЛЬ QAZTENDER RADAR</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+    `👤 <b>Администратор:</b> @mielonur (ID: <code>${adminId}</code>)\n\n` +
+    `📊 <b>СВОДКА CRM И ПРОДАЖ:</b>\n` +
+    `• 👥 <b>Всего пользователей в базе:</b> <b>${stats.totalUsers} чел.</b>\n` +
+    `• 💎 <b>Оплаченные клиенты (Активные):</b> <b>${paidCount} чел.</b>\n` +
+    `• ⏳ <b>На бесплатном триале:</b> <b>${trialCount} чел.</b>\n` +
+    `• 🔒 <b>С истёкшим доступом (Лиды):</b> <b>${expiredCount} чел.</b>\n` +
+    `• ⚡ <b>Активных за 24 часа:</b> <b>${stats.activeToday} чел.</b>\n` +
+    `• 🔗 <b>Приглашений по рефералам:</b> <b>${stats.totalReferrals} чел.</b>\n\n` +
+    `👇 <i>Выберите нужный раздел для детального управления:</i>`;
+
+  const reply_markup = {
+    inline_keyboard: [
+      [
+        { text: `💎 Платные клиенты (${paidCount})`, callback_data: "adm_list:paid" },
+        { text: `⏳ На триале (${trialCount})`, callback_data: "adm_list:trial" },
+      ],
+      [
+        { text: `🔒 Истёкший доступ (${expiredCount})`, callback_data: "adm_list:expired" },
+        { text: `👥 Все пользователи (${clientSubs.length})`, callback_data: "adm_list:all" },
+      ],
+      [
+        { text: "➕ Выдать подписку по ID", callback_data: "adm_grant_prompt" },
+        { text: "📢 Рассылка всем клиентам", callback_data: "adm_broadcast_prompt" },
+      ],
+      [
+        { text: "🔄 Обновить данные", callback_data: "cmd_admin_panel" },
+        { text: "📋 В общее меню", callback_data: "open_main_menu" },
+      ],
+    ],
+  };
+
+  return { text, reply_markup };
+}
+
+export async function formatAdminUserList(category: "paid" | "trial" | "expired" | "all") {
+  const stats = await getTelegramSubscriberStats();
+  const allSubs = stats.subscribers;
+  const adminId = getAdminChatId();
+  let filtered = allSubs.filter((s) => s.chatId !== adminId);
+
+  if (category === "paid") {
+    filtered = filtered.filter((s) => {
+      const check = isSubActive(s);
+      return check.active && !check.isTrial;
+    });
+  } else if (category === "trial") {
+    filtered = filtered.filter((s) => {
+      const check = isSubActive(s);
+      return check.active && check.isTrial;
+    });
+  } else if (category === "expired") {
+    filtered = filtered.filter((s) => !isSubActive(s).active);
+  }
+
+  const catTitles: Record<string, string> = {
+    paid: "💎 ПЛАТНЫЕ КЛИЕНТЫ С ПОДПИСКОЙ",
+    trial: "⏳ ПОЛЬЗОВАТЕЛИ НА ТРИАЛЕ",
+    expired: "🔒 ПОЛЬЗОВАТЕЛИ С ИСТЁКШИМ ДОСТУПОМ",
+    all: "👥 ВСЕ ПОЛЬЗОВАТЕЛИ",
+  };
+
+  let text = `👑 <b>АДМИН-ПАНЕЛЬ: ${catTitles[category]} (${filtered.length} чел.)</b>\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+  const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
+
+  if (filtered.length === 0) {
+    text += `<i>В этой категории пока нет пользователей.</i>\n\n`;
+  } else {
+    for (const [idx, s] of filtered.slice(0, 15).entries()) {
+      const check = isSubActive(s);
+      const tgUsername = s.username ? `@${s.username}` : "нет username";
+      const statusBadge = check.active ? (check.isTrial ? "⏳ Триал" : "💎 Подписка") : "🔒 Истёк";
+      const name = s.firstName || "Пользователь";
+      const directTgLink = s.username ? `https://t.me/${s.username}` : `tg://user?id=${s.chatId}`;
+
+      text += `<b>${idx + 1}. ${name}</b> (<a href="${directTgLink}">${tgUsername}</a>)\n` +
+        `• ID: <code>${s.chatId}</code> · Статус: <b>${statusBadge}</b>\n` +
+        `• Срок: до <b>${check.expiresStr}</b> (${check.daysLeft > 0 ? `осталось ${check.daysLeft} дн.` : "истёк"})\n` +
+        `• Рефералов: ${s.referralsCount || 0} чел.\n\n`;
+
+      buttons.push([
+        { text: `⚙️ Управление: ${name.slice(0, 15)} (${s.chatId})`, callback_data: `adm_user:${s.chatId}` },
+      ]);
+    }
+  }
+
+  buttons.push([
+    { text: "⬅️ Назад в Админ-панель", callback_data: "cmd_admin_panel" },
+  ]);
+
+  return { text, reply_markup: { inline_keyboard: buttons } };
+}
+
+export async function formatAdminUserCard(targetChatId: string) {
+  let sub = await getTelegramSubscriberByChatId(targetChatId);
+  if (!sub) {
+    sub = await getTelegramSubscriberByUserId(`tg_${targetChatId}`);
+  }
+  if (!sub) {
+    return {
+      text: `❌ Пользователь с ID <code>${targetChatId}</code> не найден в базе.`,
+      reply_markup: { inline_keyboard: [[{ text: "⬅️ В админку", callback_data: "cmd_admin_panel" }]] }
+    };
+  }
+
+  const check = isSubActive(sub);
+  const filter = await getTelegramFilter(targetChatId);
+  const directLink = sub.username ? `https://t.me/${sub.username}` : `tg://user?id=${sub.chatId}`;
+  const statusBadge = check.active ? (check.isTrial ? "⏳ Бесплатный триал" : "💎 Платная подписка") : "🔒 Доступ закрыт (Истёк)";
+
+  const locLabel = filter ? getLocalityLabel(filter.locality) : "Все регионы";
+  const catLabel = filter ? getCategoryLabel(filter.category) : "Все сферы";
+  const budLabel = filter?.maxBudget ? `до ${moneyFormatter.format(filter.maxBudget)}` : "Любой";
+
+  let text = `👤 <b>КАРТОЧКА КЛИЕНТА В CRM</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+    `• <b>Имя:</b> <b>${sub.firstName || "Пользователь"}</b>\n` +
+    `• <b>Telegram:</b> ${sub.username ? `<a href="${directLink}">@${sub.username}</a>` : "<i>(username не указан)</i>"}\n` +
+    `• <b>Telegram Chat ID:</b> <code>${sub.chatId}</code>\n` +
+    `• <b>Статус доступа:</b> <b>${statusBadge}</b>\n` +
+    `• <b>Действует до:</b> <b>${check.expiresStr}</b> (осталось: <b>${check.daysLeft} дн.</b>)\n` +
+    `• <b>Пригласил рефералов:</b> <b>${sub.referralsCount || 0} чел.</b>\n` +
+    `• <b>Дата входа:</b> ${dateFormatter.format(sub.createdAt || sub.requestedAt)}\n` +
+    `• <b>Последняя активность:</b> ${sub.lastActiveAt ? dateFormatter.format(sub.lastActiveAt) : "Недавно"}\n\n` +
+    `🎯 <b>ФИЛЬТР ЗАКУПОК ПОЛЬЗОВАТЕЛЯ:</b>\n` +
+    `• 📍 Регион: <code>${locLabel}</code>\n` +
+    `• 📁 Сфера: <code>${catLabel}</code>\n` +
+    `• 💰 Бюджет: <code>${budLabel}</code>\n\n` +
+    `⚡ <b>УПРАВЛЕНИЕ ПОДПИСКОЙ В 1 КЛИК:</b>`;
+
+  const buttons: Array<Array<{ text: string; callback_data?: string; url?: string }>> = [
+    [
+      { text: "🥉 +1 мес (30 дн)", callback_data: `adm_grant:${sub.chatId}:30` },
+      { text: "🥈 +3 мес (90 дн)", callback_data: `adm_grant:${sub.chatId}:90` },
+    ],
+    [
+      { text: "🥇 +12 мес (365 дн)", callback_data: `adm_grant:${sub.chatId}:365` },
+      { text: "⛔ Сбросить доступ", callback_data: `adm_revoke:${sub.chatId}` },
+    ],
+  ];
+
+  if (sub.username) {
+    buttons.push([
+      { text: `💬 Написать клиенту (@${sub.username})`, url: directLink },
+    ]);
+  }
+
+  buttons.push([
+    { text: "⬅️ Назад к списку", callback_data: "adm_list:all" },
+    { text: "👑 В меню админки", callback_data: "cmd_admin_panel" },
+  ]);
+
+  return { text, reply_markup: { inline_keyboard: buttons } };
 }
 
 const userSearchTimestamps = new Map<string, number[]>();
@@ -841,39 +1017,40 @@ export async function handleTelegramUpdate(update: {
       return { ok: true };
     }
 
-    if (text === "/crm" || text === "/users" || text === "/stats" || text === "/analytics" || text.includes("Статистика") || text.includes("CRM") || text.includes("crm")) {
-      const stats = await getTelegramSubscriberStats();
-      let report = `📊 <b>СТАТИСТИКА АКТИВНОСТИ QAZTENDER RADAR</b>\n━━━━━━━━━━━━━━━━━━━━\n\n` +
-        `👥 <b>Всего пользователей:</b> <b>${stats.totalUsers} чел.</b>\n` +
-        `⚡ <b>Активных за 24 часа:</b> <b>${stats.activeToday} чел.</b>\n` +
-        `🎁 <b>На бесплатном триале:</b> <b>${stats.activeTrial} чел.</b>\n` +
-        `💎 <b>С активной подпиской:</b> <b>${stats.activePaid} чел.</b>\n` +
-        `🔒 <b>С истекшим доступом:</b> <b>${stats.expired} чел.</b>\n` +
-        `🔗 <b>Приглашено по рефералам:</b> <b>${stats.totalReferrals} чел.</b>\n\n` +
-        `📋 <b>Пользователи в системе:</b>\n\n`;
-
-      if (stats.subscribers.length === 0) {
-        report += `<i>Пока нет зарегистрированных пользователей.</i>\n`;
-      } else {
-        for (const [idx, s] of stats.subscribers.slice(0, 10).entries()) {
-          const check = isSubActive(s);
-          const statusIcon = check.active ? (check.isTrial ? "⏳ Триал" : "✅ Оплачен") : "🔒 Истёк";
-          const name = s.firstName || (s.username ? `@${s.username}` : "Пользователь");
-          report += `<b>${idx + 1}. ${name}</b> (ID: <code>${s.chatId}</code>)\n` +
-            `• Статус: <b>${statusIcon}</b> (до ${check.expiresStr}, ост. ${check.daysLeft} дн.)\n` +
-            `• Рефералов: ${s.referralsCount || 0}\n\n`;
+    if (text.startsWith("/broadcast") || text.startsWith("/sendall")) {
+      if (chatId !== adminChatId) {
+        await sendTelegramMessage(chatId, "❌ Доступно только Главному Администратору.");
+        return { ok: true };
+      }
+      const broadcastText = text.replace(/^\/(broadcast|sendall)\s*/, "").trim();
+      if (!broadcastText) {
+        await sendTelegramMessage(chatId, `ℹ️ <b>ФОРМАТ РАССЫЛКИ:</b>\n<code>/broadcast Текст вашего сообщения</code>\n\nПример:\n<code>/broadcast 🔥 Внимание! База тендеров обновлена, доступно 50 новых лотов!</code>`);
+        return { ok: true };
+      }
+      const allSubs = await listTelegramSubscribers();
+      let sentCount = 0;
+      let failCount = 0;
+      for (const s of allSubs) {
+        if (s.chatId === adminChatId) continue;
+        try {
+          const res = await sendTelegramMessage(s.chatId, `📢 <b>СООБЩЕНИЕ ОТ QAZTENDER RADAR:</b>\n━━━━━━━━━━━━━━━━━━━━\n${broadcastText}`);
+          if (res.ok) sentCount++;
+          else failCount++;
+        } catch {
+          failCount++;
         }
       }
-      report += `💡 <i>Выдать / продлить подписку:</i> <code>/grant CHAT_ID ДНИ</code>`;
+      await sendTelegramMessage(adminChatId, `✅ <b>Рассылка успешно завершена!</b>\n━━━━━━━━━━━━━━━━━━━━\n• Доставлено клиентам: <b>${sentCount} чел.</b>\n• Ошибок доставки: ${failCount}`);
+      return { ok: true };
+    }
 
-      await sendTelegramMessage(chatId, report, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🔄 Обновить статистику", callback_data: "cmd_stats" }],
-            [{ text: "🌐 Веб-панель администратора", url: "https://qaztender-radar-xf7n.onrender.com/admin/users" }],
-          ],
-        },
-      });
+    if (text === "/admin" || text === "/panel" || text === "/crm" || text === "/users" || text === "/stats" || text === "/analytics" || text === "👑 Главная Админ-панель CRM" || text === "👑 Панель управления CRM" || text === "📊 Статистика и CRM") {
+      if (chatId !== adminChatId) {
+        await sendTelegramMessage(chatId, "🔒 Раздел доступен только Главному Администратору.");
+        return { ok: true };
+      }
+      const adm = await formatAdminDashboard();
+      await sendTelegramMessage(chatId, adm.text, { reply_markup: adm.reply_markup });
       return { ok: true };
     }
 
@@ -1172,6 +1349,148 @@ export async function handleTelegramUpdate(update: {
     const flood = checkFloodSpam(fromId);
     if (flood.blocked) {
       await answerCallbackQuery(query.id, `🛑 Анти-спам: подождите ${flood.remainingSeconds} сек.`, true);
+      return { ok: true };
+    }
+
+    // Main Admin Dashboard
+    if (data === "cmd_admin_panel" || data === "cmd_stats") {
+      if (fromId !== adminChatId) {
+        await answerCallbackQuery(query.id, "🔒 Доступно только Главному Администратору.", true);
+        return { ok: true };
+      }
+      await answerCallbackQuery(query.id);
+      const adm = await formatAdminDashboard();
+      if (query.message?.message_id) {
+        await editTelegramMessageText(fromId, query.message.message_id, adm.text, { reply_markup: adm.reply_markup });
+      } else {
+        await sendTelegramMessage(fromId, adm.text, { reply_markup: adm.reply_markup });
+      }
+      return { ok: true };
+    }
+
+    // Admin view category list (paid, trial, expired, all)
+    if (data.startsWith("adm_list:")) {
+      if (fromId !== adminChatId) {
+        await answerCallbackQuery(query.id, "🔒 Доступно только Главному Администратору.", true);
+        return { ok: true };
+      }
+      const category = data.slice(9) as "paid" | "trial" | "expired" | "all";
+      await answerCallbackQuery(query.id);
+      const list = await formatAdminUserList(category);
+      if (query.message?.message_id) {
+        await editTelegramMessageText(fromId, query.message.message_id, list.text, { reply_markup: list.reply_markup });
+      } else {
+        await sendTelegramMessage(fromId, list.text, { reply_markup: list.reply_markup });
+      }
+      return { ok: true };
+    }
+
+    // Admin view detailed user card
+    if (data.startsWith("adm_user:")) {
+      if (fromId !== adminChatId) {
+        await answerCallbackQuery(query.id, "🔒 Доступно только Главному Администратору.", true);
+        return { ok: true };
+      }
+      const targetChatId = data.slice(9);
+      await answerCallbackQuery(query.id);
+      const card = await formatAdminUserCard(targetChatId);
+      if (query.message?.message_id) {
+        await editTelegramMessageText(fromId, query.message.message_id, card.text, { reply_markup: card.reply_markup });
+      } else {
+        await sendTelegramMessage(fromId, card.text, { reply_markup: card.reply_markup });
+      }
+      return { ok: true };
+    }
+
+    // Admin grants days to user from user card
+    if (data.startsWith("adm_grant:")) {
+      if (fromId !== adminChatId) {
+        await answerCallbackQuery(query.id, "🔒 Доступно только Главному Администратору.", true);
+        return { ok: true };
+      }
+      const parts = data.split(":");
+      const targetChatId = parts[1];
+      const days = parseInt(parts[2] || "30", 10);
+      const updated = await grantUserSubscription(targetChatId, days, "admin");
+      if (!updated) {
+        await answerCallbackQuery(query.id, "❌ Пользователь не найден.", true);
+        return { ok: true };
+      }
+      const expStr = dateFormatter.format(updated.subscriptionExpiresAt || Date.now());
+      await answerCallbackQuery(query.id, `✅ Продлено на ${days} дней (до ${expStr})!`, true);
+
+      // Refresh user card
+      const card = await formatAdminUserCard(targetChatId);
+      if (query.message?.message_id) {
+        await editTelegramMessageText(fromId, query.message.message_id, card.text, { reply_markup: card.reply_markup });
+      }
+
+      // Notify customer
+      await sendTelegramMessage(targetChatId, `🎉 <b>ВАША ПОДПИСКА НА QAZTENDER RADAR ПРОДЛЕНА!</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `Срок действия продлён на <b>+${days} дней</b> (до <b>${expStr}</b>).\n\n` +
+        `Вам открыт полный безлимитный доступ ко всем функциям платформы! 🚀`, {
+        reply_markup: MAIN_INLINE_MENU,
+      });
+      return { ok: true };
+    }
+
+    // Admin revokes access
+    if (data.startsWith("adm_revoke:")) {
+      if (fromId !== adminChatId) {
+        await answerCallbackQuery(query.id, "🔒 Доступно только Главному Администратору.", true);
+        return { ok: true };
+      }
+      const targetChatId = data.slice(11);
+      await revokeTelegramSubscription(targetChatId);
+      await answerCallbackQuery(query.id, "⛔ Доступ пользователя сброшен (истёк).", true);
+
+      // Refresh card
+      const card = await formatAdminUserCard(targetChatId);
+      if (query.message?.message_id) {
+        await editTelegramMessageText(fromId, query.message.message_id, card.text, { reply_markup: card.reply_markup });
+      }
+      return { ok: true };
+    }
+
+    // Admin prompt: grant instructions
+    if (data === "adm_grant_prompt") {
+      if (fromId !== adminChatId) {
+        await answerCallbackQuery(query.id, "🔒 Доступно только Главному Администратору.", true);
+        return { ok: true };
+      }
+      await answerCallbackQuery(query.id);
+      await sendTelegramMessage(fromId, `➕ <b>ВЫДАЧА ПОДПИСКИ ПО ID</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `Чтобы выдать или продлить подписку любому пользователю, отправьте команду:\n\n` +
+        `<code>/grant CHAT_ID ДНИ</code>\n\n` +
+        `Примеры:\n` +
+        `• <code>/grant 12345678 30</code> — на 1 месяц\n` +
+        `• <code>/grant 12345678 90</code> — на 3 месяца\n` +
+        `• <code>/grant 12345678 365</code> — на 1 год\n\n` +
+        `<i>Либо выберите пользователя из списков в админ-панели и нажмите кнопку продления в 1 клик.</i>`, {
+        reply_markup: {
+          inline_keyboard: [[{ text: "⬅️ Назад в Админ-панель", callback_data: "cmd_admin_panel" }]]
+        }
+      });
+      return { ok: true };
+    }
+
+    // Admin prompt: broadcast instructions
+    if (data === "adm_broadcast_prompt") {
+      if (fromId !== adminChatId) {
+        await answerCallbackQuery(query.id, "🔒 Доступно только Главному Администратору.", true);
+        return { ok: true };
+      }
+      await answerCallbackQuery(query.id);
+      await sendTelegramMessage(fromId, `📢 <b>МАССОВАЯ РАССЫЛКА ВСЕМ КЛИЕНТАМ</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `Чтобы отправить сообщение или спецпредложение всем пользователям бота одновременно, отправьте команду:\n\n` +
+        `<code>/broadcast Текст вашего сообщения</code>\n\n` +
+        `Пример:\n` +
+        `<code>/broadcast 🔥 Уважаемые клиенты! Сегодня в базе появилось 80 новых тендеров по строительству и товарам!</code>\n\n` +
+        `<i>Бот мгновенно разошлёт сообщение всем активным пользователям и пришлёт вам отчет о доставке.</i>`, {
+        reply_markup: {
+          inline_keyboard: [[{ text: "⬅️ Назад в Админ-панель", callback_data: "cmd_admin_panel" }]]
+        }
+      });
       return { ok: true };
     }
 
