@@ -92,27 +92,22 @@ export function parseCustomBudgetAmount(input: string): number | null {
 export const pendingBudgetInput = new Map<string, number>();
 
 export function formatPaywallMessage(chatId: string | number, username?: string, firstName?: string) {
-  const userTag = username ? `@${username}` : (firstName || "Пользователь");
-  const waText = encodeURIComponent(`Здравствуйте! Хочу оплатить подписку на QazTender Radar.\nМой Telegram: ${userTag} (ID: ${chatId})`);
-  const waUrl = `https://wa.me/77773828303?text=${waText}`;
-
   const text = `🔒 <b>ВАШ БЕСПЛАТНЫЙ ДОСТУП ЗАВЕРШЁН</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
     `Чтобы продолжить находить прибыльные закупки и выигрывать тендеры:\n\n` +
     `💼 <b>ТАРИФНЫЕ ПЛАНЫ QAZTENDER RADAR:</b>\n` +
     `🥉 <b>1 месяц (Стандарт)</b> — <code>4 990 ₸</code>\n` +
     `🥈 <b>3 месяца (Выгодный -47%)</b> — <code>7 990 ₸</code> <i>(2 660 ₸/мес)</i>\n` +
     `🥇 <b>12 месяцев (VIP Безлимит на 1 год -67%)</b> — <code>19 990 ₸</code> <i>(всего 1 660 ₸/мес)</i>\n\n` +
-    `📲 <b>Оплата через Kaspi Gold / Kaspi Pay:</b>\n` +
-    `Номер Kaspi: <code>87773828303</code> (Нурсултан А.)\n` +
+    `📲 <b>Оплата через Kaspi:</b>\n` +
+    `Для получения реквизитов или выставления счета Kaspi напишите администратору в Telegram: @mielonur\n` +
     `В назначении перевода укажите ваш ID: <code>${chatId}</code>\n\n` +
     `💡 <i>Хотите продлить бесплатно? Пригласите коллегу по ссылке и получите <b>+3 дня</b> в подарок!</i>`;
 
   const reply_markup = {
     inline_keyboard: [
-      [{ text: "💳 Оплатить через Kaspi (Реквизиты)", callback_data: "pay_kaspi" }],
+      [{ text: "💳 Оплатить через Kaspi", callback_data: "pay_kaspi" }],
       [{ text: "🧾 Я оплатил (Отправить чек)", callback_data: "submit_receipt" }],
       [{ text: "🎁 Получить +3 дня бесплатно (Пригласить друга)", callback_data: "cmd_ref" }],
-      [{ text: "📲 Написать в WhatsApp (+7 777 382 83 03)", url: waUrl }],
       [{ text: "💬 Написать разработчику в TG (@mielonur)", url: "https://t.me/mielonur" }],
       [{ text: "🔄 Проверить статус подписки", callback_data: "check_subscription" }],
     ],
@@ -714,7 +709,7 @@ export async function handleTelegramUpdate(update: {
       // Check if trial or subscription is active
       const subCheck = isSubActive(sub);
       if (!subCheck.active) {
-        // Expired! Show paywall with Kaspi and WhatsApp details
+        // Expired! Show paywall with Kaspi and Telegram details
         const pw = formatPaywallMessage(chatId, tgUser.username, tgUser.first_name);
         await sendTelegramMessage(chatId, pw.text, { reply_markup: pw.reply_markup });
         return { ok: true };
@@ -895,12 +890,13 @@ export async function handleTelegramUpdate(update: {
         `🥇 <b>12 месяцев (VIP Безлимит на 1 год -67%)</b> — <code>19 990 ₸</code> <i>(всего 1 660 ₸/мес)</i>\n` +
         `• Целый год бесперебойного мониторинга тендеров\n` +
         `• Максимальная выгода и приоритетная техподдержка\n\n` +
-        `📲 <b>Оплата через Kaspi Gold / Kaspi Pay:</b> <code>87773828303</code> (Нурсултан А.)`;
+        `📲 <b>Оплата через Kaspi:</b>\n` +
+        `Для получения реквизитов или выставления счёта напишите в Telegram: @mielonur`;
 
       await sendTelegramMessage(chatId, pricingMsg, {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "💳 Оплатить через Kaspi (Реквизиты)", callback_data: "pay_kaspi" }],
+            [{ text: "💳 Оплатить через Kaspi", callback_data: "pay_kaspi" }],
             [{ text: "🧾 Я оплатил (Отправить чек)", callback_data: "submit_receipt" }],
             [{ text: "🎁 Получить +3 дня бесплатно (Пригласить друга)", callback_data: "cmd_ref" }],
             [{ text: "💬 Написать разработчику (@mielonur)", url: "https://t.me/mielonur" }],
@@ -1112,7 +1108,7 @@ export async function handleTelegramUpdate(update: {
       const userTag = tgUser.username ? `@${tgUser.username}` : (tgUser.first_name || "Пользователь");
       await sendTelegramMessage(chatId, `✅ <b>Спасибо! Ваше уведомление об оплате принято.</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
         `Администратор проверяет платеж и активирует вашу подписку в течение нескольких минут.\n\n` +
-        `<i>Для быстрой связи вы также можете отправить квитанцию в WhatsApp (+7 777 382 83 03) или в личные сообщения @mielonur.</i>`);
+        `<i>Для быстрой связи вы также можете отправить квитанцию в личные сообщения Telegram: @mielonur.</i>`);
 
       if (adminChatId) {
         await sendTelegramMessage(adminChatId, `🔔 <b>СООБЩЕНИЕ ОБ ОПЛАТЕ ПОДПИСКИ</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
@@ -1247,7 +1243,7 @@ export async function handleTelegramUpdate(update: {
           reply_markup: MAIN_REPLY_KEYBOARD,
         });
       } else {
-        await answerCallbackQuery(query.id, "🔒 Подписка ещё не подтверждена. Отправьте чек на WhatsApp: +7 777 382 83 03", true);
+        await answerCallbackQuery(query.id, "🔒 Подписка ещё не подтверждена. Отправьте чек администратору в Telegram: @mielonur", true);
       }
       return { ok: true };
     }
@@ -1555,18 +1551,17 @@ export async function handleTelegramUpdate(update: {
         `🥉 <b>1 месяц (Стандарт)</b> — <code>4 990 ₸</code>\n` +
         `🥈 <b>3 месяца (Выгодный -47%)</b> — <code>7 990 ₸</code> <i>(2 660 ₸/мес)</i>\n` +
         `🥇 <b>12 месяцев (VIP Безлимит на 1 год -67%)</b> — <code>19 990 ₸</code> <i>(1 660 ₸/мес)</i>\n\n` +
-        `📲 <b>Реквизиты для перевода Kaspi Gold / Kaspi Pay:</b>\n` +
-        `• Номер: <code>87773828303</code> (Нурсултан А.)\n` +
-        `• В комментарии укажите ваш Telegram ID: <code>${fromId}</code>\n\n` +
-        `После совершения перевода нажмите кнопку <b>«🧾 Я оплатил (Отправить чек)»</b> ниже:`;
+        `📲 <b>Как оплатить через Kaspi:</b>\n` +
+        `1. Напишите администратору в Telegram: <b>@mielonur</b> для получения реквизитов / Kaspi QR или счёта на оплату.\n` +
+        `2. В назначении перевода укажите ваш Telegram ID: <code>${fromId}</code>\n` +
+        `3. После оплаты нажмите кнопку <b>«🧾 Я оплатил (Отправить чек)»</b> ниже:`;
 
       await sendTelegramMessage(fromId, payMsg, {
         reply_markup: {
           inline_keyboard: [
             [{ text: "🧾 Я оплатил (Отправить чек)", callback_data: "submit_receipt" }],
-            [{ text: "📲 Отправить чек в WhatsApp", url: `https://wa.me/77773828303?text=${encodeURIComponent(`Здравствуйте! Оплатил подписку на QazTender Radar. Мой ID: ${fromId}`)}` }],
-            [{ text: "💬 Написать разработчику в TG", url: "https://t.me/mielonur" }],
-            [{ text: "⬅️ Назад", callback_data: "cmd_pricing" }],
+            [{ text: "💬 Написать разработчику в Telegram (@mielonur)", url: "https://t.me/mielonur" }],
+            [{ text: "⬅️ Назад к тарифам", callback_data: "cmd_pricing" }],
           ]
         }
       });
@@ -1580,9 +1575,8 @@ export async function handleTelegramUpdate(update: {
 
       await sendTelegramMessage(fromId, `✅ <b>ВАША ЗАЯВКА НА АКТИВАЦИЮ ПРИНЯТА!</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
         `Администратор уже получил уведомление о вашей оплате.\n\n` +
-        `Вы также можете отправить скриншот чека разработчику:\n` +
-        `👉 Telegram: @mielonur\n` +
-        `👉 WhatsApp: +7 777 382 83 03\n\n` +
+        `Вы также можете отправить скриншот чека разработчику в Telegram:\n` +
+        `👉 <b>@mielonur</b>\n\n` +
         `<i>Доступ будет активирован в течение нескольких минут!</i>`);
 
       if (adminChatId) {
@@ -1653,7 +1647,7 @@ export async function handleTelegramUpdate(update: {
       if (query.message?.message_id) {
         await editTelegramMessageText(fromId, query.message.message_id, `❌ <b>Заявка на оплату отклонена</b> (ID: <code>${targetChatId}</code>)`);
       }
-      await sendTelegramMessage(targetChatId, `⚠️ <b>Ваша заявка на оплату не подтверждена.</b>\n\nЕсли вы совершили перевод, пожалуйста, свяжитесь напрямую с разработчиком @mielonur или в WhatsApp: +7 777 382 83 03.`);
+      await sendTelegramMessage(targetChatId, `⚠️ <b>Ваша заявка на оплату не подтверждена.</b>\n\nЕсли вы совершили перевод, пожалуйста, свяжитесь напрямую с администратором в Telegram: @mielonur.`);
       return { ok: true };
     }
 
