@@ -388,8 +388,25 @@ export const STAGE_LABELS: Record<string, string> = {
   lost: "❌ Проиграли",
 };
 
+export function getGoszakupUrl(tender: { numberAnno?: string | null; externalId?: string | null; sourceUrl?: string | null }): string {
+  const anno = (tender.numberAnno || "").trim();
+  if (anno) {
+    const baseAnno = anno.includes("-") ? anno.split("-")[0] : anno;
+    return `https://goszakup.gov.kz/ru/search/announce?filter%5Bnumber%5D=${encodeURIComponent(baseAnno)}`;
+  }
+  const extId = (tender.externalId || "").trim();
+  if (extId) {
+    return `https://goszakup.gov.kz/ru/search/announce?filter%5Bnumber%5D=${encodeURIComponent(extId)}`;
+  }
+  if (tender.sourceUrl && tender.sourceUrl.startsWith("http")) {
+    return tender.sourceUrl;
+  }
+  return "https://goszakup.gov.kz/ru/search/announce";
+}
+
 export function formatSingleTenderReviewCard(tender: TenderRecord, currentIndex: number, totalCount: number, nextOffset: number) {
   const days = tender.endDate ? Math.ceil((tender.endDate - Date.now()) / (1000 * 60 * 60 * 24)) : null;
+  const officialUrl = getGoszakupUrl(tender);
 
   let text = `🔍 <b>ИНДИВИДУАЛЬНЫЙ ПОДБОР ТЕНДЕРА [${currentIndex} из ${totalCount}]</b>\n━━━━━━━━━━━━━━━━━━━━\n`;
   text += `📋 <b>№ ${tender.numberAnno}</b> · ${tender.methodName}\n`;
@@ -405,11 +422,12 @@ export function formatSingleTenderReviewCard(tender: TenderRecord, currentIndex:
       { text: "💚 👍 Интересно (В избранное)", callback_data: `swipe_yes:${tender.externalId}:${nextOffset}` },
     ],
     [
-      { text: "📁 В работу", callback_data: `swipe_work:${tender.externalId}:${nextOffset}` },
-      { text: "🌐 На Госзакупки", url: tender.sourceUrl },
+      { text: "📊 Подробный анализ", callback_data: `analyze:${tender.externalId}` },
+      { text: "🌐 На Госзакупки", url: officialUrl },
     ],
     [
-      { text: "❌ 👎 Не интересно (Пропустить)", callback_data: `swipe_no:${tender.externalId}:${nextOffset}` },
+      { text: "📁 В работу", callback_data: `swipe_work:${tender.externalId}:${nextOffset}` },
+      { text: "❌ 👎 Пропустить", callback_data: `swipe_no:${tender.externalId}:${nextOffset}` },
     ],
     [
       { text: "📋 Завершить просмотр", callback_data: "cmd_filter" },
@@ -422,6 +440,7 @@ export function formatSingleTenderReviewCard(tender: TenderRecord, currentIndex:
 export function formatTenderTelegramCard(tender: TenderRecord, profile?: CompanyProfile | null, note?: string, isAdmin = false, currentStage?: string) {
   const match = profile ? explainTenderMatch(tender, profile) : null;
   const days = tender.endDate ? Math.ceil((tender.endDate - Date.now()) / (1000 * 60 * 60 * 24)) : null;
+  const officialUrl = getGoszakupUrl(tender);
 
   let text = `🏛 <b>ГОСЗАКУПКИ РК</b>\n━━━━━━━━━━━━━━━━━━━━\n`;
   text += `📋 <b>№ ${tender.numberAnno}</b> · ${tender.methodName}\n`;
@@ -445,16 +464,16 @@ export function formatTenderTelegramCard(tender: TenderRecord, profile?: Company
 
   const buttons: Array<Array<{ text: string; url?: string; callback_data?: string }>> = [
     [
-      { text: "🌐 На Goszakup", url: tender.sourceUrl },
-      { text: "★ В избранное", callback_data: `fav:${tender.externalId}` },
+      { text: "🌐 На Goszakup", url: officialUrl },
+      { text: "📊 Подробный анализ", callback_data: `analyze:${tender.externalId}` },
     ],
     [
-      { text: "📂 Статус в работе", callback_data: `menu_stage:${tender.externalId}` },
+      { text: "★ В избранное", callback_data: `fav:${tender.externalId}` },
+      { text: "📂 В работу", callback_data: `menu_stage:${tender.externalId}` },
+    ],
+    [
       { text: "📑 Чек-лист", callback_data: `tasks:${tender.externalId}` },
       { text: "📦 Лоты", callback_data: `lots:${tender.externalId}` },
-    ],
-    [
-      { text: "💬 Заметки", callback_data: `notes:${tender.externalId}` },
       { text: "⛔ Скрыть", callback_data: `hide:${tender.externalId}` },
     ],
   ];
@@ -1320,7 +1339,67 @@ export async function handleTelegramUpdate(update: {
       return { ok: true };
     }
 
+    // Deep Analytical Tender Breakdown
+    if (data.startsWith("analyze:")) {
+      const tenderId = data.slice(8);
+      await answerCallbackQuery(query.id, "Формируем глубокий анализ лота...");
+      const tender = await getTenderById(tenderId);
+      if (!tender) {
+        await sendTelegramMessage(fromId, "❌ Тендер не найден в базе данных.");
+        return { ok: true };
+      }
 
+      const days = tender.endDate ? Math.ceil((tender.endDate - Date.now()) / 86400000) : null;
+      const deposit1Pct = Math.round(tender.budget * 0.01);
+      const deposit3Pct = Math.round(tender.budget * 0.03);
+      const officialUrl = getGoszakupUrl(tender);
+
+      const analysisText = `📊 <b>ГЛУБОКИЙ АНАЛИЗ И ЭКСПЕРТИЗА ТЕНДЕРА</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `📋 <b>Номер объявления:</b> <code>${tender.numberAnno}</code>\n` +
+        `📌 <b>Наименование:</b> <b>${tender.title}</b>\n\n` +
+        `💰 <b>ФИНАНСОВЫЕ ПАРАМЕТРЫ:</b>\n` +
+        `• <b>Общий бюджет:</b> <code>${moneyFormatter.format(tender.budget)}</code>\n` +
+        `• <b>Обеспечение заявки (1%):</b> ${moneyFormatter.format(deposit1Pct)} <i>(электронная гарантия / кошелек)</i>\n` +
+        `• <b>Обеспечение исполнения договора (3%):</b> ${moneyFormatter.format(deposit3Pct)}\n\n` +
+        `🏢 <b>ЗАКАЗЧИК И РЕКВИЗИТЫ:</b>\n` +
+        `• <b>Организатор:</b> ${tender.buyer}\n` +
+        `• <b>БИН заказчика:</b> <code>${tender.customerBin || "Не указан"}</code>\n` +
+        `• <b>Регион поставки:</b> 📍 ${tender.regionName}\n` +
+        `• <b>Способ закупки:</b> ⚖️ ${tender.methodName} (${tender.subjectType})\n\n` +
+        `⏳ <b>ТАЙМЛАЙН И СРОКИ:</b>\n` +
+        `• <b>Опубликовано:</b> ${tender.publishDate ? dateFormatter.format(tender.publishDate) : "Ранее"}\n` +
+        `• <b>Приём заявок до:</b> ${tender.endDate ? `${dateFormatter.format(tender.endDate)} (осталось <b>${days} дн.</b>)` : "Не указано"}\n\n` +
+        `📑 <b>ОСНОВНЫЕ ТРЕБОВАНИЯ К ПОСТАВЩИКУ:</b>\n` +
+        `1. Отсутствие в Реестре недобросовестных участников (РНУ)\n` +
+        `2. Наличие ЭЦП (юридического лица или ИП) и регистрация на goszakup.gov.kz\n` +
+        `3. Предоставление ценового предложения и согласия с проектом договора\n` +
+        (tender.isConstructionWork ? `4. ⚠️ <b>Строительно-монтажные работы:</b> требуется лицензия ГАСК (I/II/III категории) и опыт работы.\n\n` : `\n`) +
+        `💡 <b>ПРЯМАЯ ССЫЛКА НА ПОРТАЛ ГОСЗАКУПОК:</b>\n` +
+        `👉 <a href="${officialUrl}">Открыть объявление № ${tender.numberAnno} на Goszakup.gov.kz</a>\n\n` +
+        `<i>Рекомендуем подавать заявку минимум за 24 часа до дедлайна.</i>`;
+
+      const analysisButtons = [
+        [
+          { text: "🌐 Открыть закупку на Goszakup.gov.kz", url: officialUrl },
+        ],
+        [
+          { text: "★ В избранное", callback_data: `fav:${tender.externalId}` },
+          { text: "📁 Взять в работу", callback_data: `menu_stage:${tender.externalId}` },
+        ],
+        [
+          { text: "📑 Чек-лист документов", callback_data: `tasks:${tender.externalId}` },
+          { text: "📦 Спецификация и лоты", callback_data: `lots:${tender.externalId}` },
+        ],
+        [
+          { text: "⬅️ Назад к моим тендерам", callback_data: "cmd_my_tenders" },
+        ],
+      ];
+
+      await sendTelegramMessage(fromId, analysisText, {
+        reply_markup: { inline_keyboard: analysisButtons },
+      });
+      return { ok: true };
+    }
 
     // Open filter menu
     if (data === "open_filter_menu") {
@@ -2350,7 +2429,10 @@ export async function checkAndSendDeadlineAlerts(): Promise<{ delivered: number 
             `⚠️ <i>Проверьте прикрепление файлов, платёжного поручения обеспечения и подпишите заявку ЭЦП вовремя!</i>`;
 
           const buttons = [
-            [{ text: "🌐 Открыть на Goszakup", url: tender.sourceUrl }],
+            [
+              { text: "🌐 Открыть на Goszakup", url: getGoszakupUrl(tender) },
+              { text: "📊 Анализ", callback_data: `analyze:${tender.externalId}` },
+            ],
           ];
 
           const res = await sendTelegramMessage(sub.chatId, alertText, { reply_markup: { inline_keyboard: buttons } });

@@ -210,7 +210,9 @@ export function normalizeAnnouncement(item: ApiAnnouncement, now = Date.now()): 
     statusName: item.RefBuyStatus?.nameRu?.trim() || "Опубликовано (прием заявок)",
     kato: JSON.stringify(kato),
     systemId: Number(item.systemId ?? 3),
-    sourceUrl: `https://www.goszakup.gov.kz/ru/announce/index/${externalId}`,
+    sourceUrl: item.numberAnno
+      ? `https://goszakup.gov.kz/ru/search/announce?filter%5Bnumber%5D=${encodeURIComponent(item.numberAnno.replace(/-\d+$/, ""))}`
+      : `https://www.goszakup.gov.kz/ru/announce/index/${externalId}`,
     upstreamUpdatedAt: item.lastUpdateDate?.trim() || item.indexDate?.trim() || "",
     fetchedAt: now,
     updatedAt: now,
