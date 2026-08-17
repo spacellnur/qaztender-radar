@@ -341,18 +341,36 @@ export function matchesTenderLocation(
   const loc = getLocalityByValue(localityVal);
   if (!loc) return true;
 
-  // 1. If filtering by whole region code (e.g. all_turkestan -> "61")
-  if (loc.regionCode) {
-    if (tender.regionCode && tender.regionCode === loc.regionCode) {
-      if (loc.value.startsWith("all_")) return true; // whole region selected
+  const textToSearch = `${tender.title} ${tender.buyer} ${tender.regionName || ""} ${tender.kato || ""}`.toLowerCase();
+
+  // 1. If filtering by whole region (e.g. all_turkestan -> "61")
+  if (loc.regionCode && loc.value.startsWith("all_")) {
+    if (tender.regionCode && tender.regionCode === loc.regionCode) return true;
+    if (loc.keywords && loc.keywords.some((k) => textToSearch.includes(k.toLowerCase()))) return true;
+    return false;
+  }
+
+  // 2. If region code matches and user chose region cluster (e.g. turkestan_cluster -> "61")
+  if (loc.regionCode && loc.value.endsWith("_cluster")) {
+    if (tender.regionCode && tender.regionCode === loc.regionCode) return true;
+    // Cross-border south overlap for Shymkent / Turkestan
+    if ((loc.regionCode === "61" && tender.regionCode === "79") || (loc.regionCode === "79" && tender.regionCode === "61")) {
+      if (loc.keywords && loc.keywords.some((k) => textToSearch.includes(k.toLowerCase()))) return true;
     }
   }
 
-  // 2. Specific keywords search in title, buyer, region name, and kato
-  if (!loc.keywords || loc.keywords.length === 0) {
-    return true;
+  // 3. Keyword matching for specific district/city/village
+  if (loc.keywords && loc.keywords.length > 0) {
+    const hasKeyword = loc.keywords.some((k) => textToSearch.includes(k.toLowerCase()));
+    if (hasKeyword) return true;
   }
 
-  const textToSearch = `${tender.title} ${tender.buyer} ${tender.regionName || ""} ${tender.kato || ""}`.toLowerCase();
-  return loc.keywords.some((k) => textToSearch.includes(k.toLowerCase()));
+  // 4. Fallback on matching region code only if no specific sub-city was requested
+  if (loc.regionCode && tender.regionCode && tender.regionCode === loc.regionCode) {
+    if (loc.value === `all_${loc.regionId}` || loc.value === `${loc.regionId}_cluster`) {
+      return true;
+    }
+  }
+
+  return false;
 }

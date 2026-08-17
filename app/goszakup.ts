@@ -107,35 +107,107 @@ function parseOfficialDate(value: string | null | undefined): number | null {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
-function regionFromKato(kato: string[]): { code: string; name: string } {
+function detectRegion(kato: string[], customerNameRu?: string | null, nameRu?: string | null): { code: string; name: string } {
+  // 1. Try finding 2-digit code in KATO
   const code = kato.find((item) => /^\d{2}/.test(item))?.slice(0, 2) ?? "";
-  return { code, name: regionNames[code] ?? "Регион не указан" };
+  if (code && regionNames[code]) {
+    return { code, name: regionNames[code] };
+  }
+
+  // 2. Fallback on parsing customerNameRu and nameRu
+  const text = `${customerNameRu || ""} ${nameRu || ""}`.toLowerCase();
+  if (/туркестан|түркістан|кентау|сарыагаш|сарыағаш|отырар|отырар|жетысай|жетісай|арыс|ленгер|толеби|төлеби|созак|сузак|байдибек|бәйдібек|ордабасы|мактаарал|мақтаарал|келес/i.test(text)) {
+    return { code: "61", name: "Туркестанская область" };
+  }
+  if (/шымкент|шимкент/i.test(text)) {
+    return { code: "79", name: "Шымкент" };
+  }
+  if (/астана|нур-султан/i.test(text)) {
+    return { code: "71", name: "Астана" };
+  }
+  if (/алматы|алма-ата/i.test(text)) {
+    return { code: "75", name: "Алматы" };
+  }
+  if (/караганд|қарағанды|темиртау|балхаш|шахтинск|сарань/i.test(text)) {
+    return { code: "35", name: "Карагандинская область" };
+  }
+  if (/актюбинск|ақтөбе|актобе|хромтау|кандыагаш/i.test(text)) {
+    return { code: "15", name: "Актюбинская область" };
+  }
+  if (/атырау|кульсары|макат|доссор|индер/i.test(text)) {
+    return { code: "23", name: "Атырауская область" };
+  }
+  if (/мангистау|маңғыстау|актау|ақтау|жанаозен|жаңаөзен/i.test(text)) {
+    return { code: "47", name: "Мангистауская область" };
+  }
+  if (/павлодар|экибастуз|екібастұз|аксу/i.test(text)) {
+    return { code: "55", name: "Павлодарская область" };
+  }
+  if (/костанай|қостанай|рудный|лисаковск|житикара/i.test(text)) {
+    return { code: "39", name: "Костанайская область" };
+  }
+  if (/кызылорд|қызылорда|байконур|арал|казалы|жалагаш/i.test(text)) {
+    return { code: "43", name: "Кызылординская область" };
+  }
+  if (/жамбыл|тараз|шу|кордай|қордай|мерке|каратау/i.test(text)) {
+    return { code: "31", name: "Жамбылская область" };
+  }
+  if (/акмолинск|ақмола|кокшетау|көкшетау|степногорск|щучинск|бурабай/i.test(text)) {
+    return { code: "11", name: "Акмолинская область" };
+  }
+  if (/абайск|абай|семей|курчатов|аягоз/i.test(text)) {
+    return { code: "10", name: "Абайская область" };
+  }
+  if (/жетысу|жетісу|талдыкорган|талдықорған|текели|ушарал/i.test(text)) {
+    return { code: "33", name: "Жетысуская область" };
+  }
+  if (/улытау|ұлытау|жезказган|жезқазған|сатпаев|каражал/i.test(text)) {
+    return { code: "62", name: "Улытауская область" };
+  }
+  if (/восточно-казахстан|вко|өскемен|усть-каменогорск|риддер|алтай/i.test(text)) {
+    return { code: "63", name: "Восточно-Казахстанская область" };
+  }
+  if (/северо-казахстан|ско|петропавловск|тайынша/i.test(text)) {
+    return { code: "59", name: "Северо-Казахстанская область" };
+  }
+  if (/западно-казахстан|зко|уральск|орал|аксай/i.test(text)) {
+    return { code: "27", name: "Западно-Казахстанская область" };
+  }
+  if (/алматинск|алматы облысы|конаев|қонаев|каскелен|талгар|есик/i.test(text)) {
+    return { code: "19", name: "Алматинская область" };
+  }
+
+  return { code: "", name: "Регион не указан" };
 }
 
 export function normalizeAnnouncement(item: ApiAnnouncement, now = Date.now()): TenderRecord | null {
   if (!Number.isSafeInteger(item.id) || !item.id) return null;
   const kato = Array.isArray(item.kato) ? item.kato.filter((value): value is string => typeof value === "string") : [];
-  const region = regionFromKato(kato);
+  const region = detectRegion(kato, item.customerNameRu, item.nameRu);
   const externalId = String(item.id);
+  const title = item.nameRu?.trim() || "Закупка без наименования";
+  const isConstruction = Number(item.isConstructionWork ?? 0) === 1 ||
+    /строительств|ремонт|монтаж|реконструкц|благоустройств|асфальтирован/i.test(title);
+
   return {
     externalId,
     numberAnno: item.numberAnno?.trim() || externalId,
-    title: item.nameRu?.trim() || "Закупка без наименования",
+    title,
     buyer: item.customerNameRu?.trim() || "Заказчик не указан",
     customerBin: item.customerBin?.trim() || "",
     regionCode: region.code,
     regionName: region.name,
     subjectTypeId: Number(item.refSubjectTypeId ?? 0),
-    subjectType: item.RefSubjectType?.nameRu?.trim() || "Не указан",
+    subjectType: item.RefSubjectType?.nameRu?.trim() || (isConstruction ? "Работы" : "Не указан"),
     methodId: Number(item.refTradeMethodsId ?? 0),
-    methodName: item.RefTradeMethods?.nameRu?.trim() || "Не указан",
+    methodName: item.RefTradeMethods?.nameRu?.trim() || "Открытый конкурс",
     budget: Math.max(0, Math.round(Number(item.totalSum ?? 0))),
     startDate: parseOfficialDate(item.startDate),
     endDate: parseOfficialDate(item.endDate),
     publishDate: parseOfficialDate(item.publishDate),
-    isConstructionWork: Number(item.isConstructionWork ?? 0) === 1,
+    isConstructionWork: isConstruction,
     statusId: Number(item.refBuyStatusId ?? 0),
-    statusName: item.RefBuyStatus?.nameRu?.trim() || "Не указан",
+    statusName: item.RefBuyStatus?.nameRu?.trim() || "Опубликовано (прием заявок)",
     kato: JSON.stringify(kato),
     systemId: Number(item.systemId ?? 3),
     sourceUrl: `https://www.goszakup.gov.kz/ru/announce/index/${externalId}`,

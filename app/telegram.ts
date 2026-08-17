@@ -1595,13 +1595,30 @@ export async function handleTelegramUpdate(update: {
         })
         .filter((t) => !currentFilter.maxBudget || t.budget <= currentFilter.maxBudget);
 
-      let headerNote = "";
+      const locLabel = getLocalityLabel(currentFilter.locality);
+      const catLabel = getCategoryLabel(currentFilter.category);
+
       if (matched.length === 0) {
-        matched = tenders.filter((t) => !t.endDate || t.endDate > now);
-        if (matched.length === 0) {
-          matched = tenders;
-        }
-        headerNote = `\n<i>(По вашему точному фильтру лотов сейчас нет, показываем ближайшие актуальные тендеры)</i>`;
+        const budgetText = currentFilter.maxBudget > 0 ? `до ${moneyFormatter.format(currentFilter.maxBudget)}` : "любой бюджет";
+        const emptyMsg = `🔍 <b>ПО ВАШЕМУ ФИЛЬТРУ ПОКА НЕТ АКТИВНЫХ ЛОТОВ</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+          `📍 <b>Регион:</b> ${locLabel}\n` +
+          `📁 <b>Сфера:</b> ${catLabel}\n` +
+          `💰 <b>Бюджет:</b> ${budgetText}\n\n` +
+          `💡 <i>Вы можете увеличить сумму бюджета или сменить параметры в 1 клик:</i>`;
+
+        const actionButtons = [
+          [{ text: "💰 Увеличить бюджет до 50 млн ₸", callback_data: "set_budget:50000000" }],
+          [{ text: "💰 Увеличить бюджет до 100 млн ₸", callback_data: "set_budget:100000000" }],
+          [{ text: "🌐 Сбросить лимит бюджета (Любой)", callback_data: "set_budget:0" }],
+          [{ text: "📍 Сменить город / район", callback_data: "menu_locality" }],
+          [{ text: "📁 Все сферы деятельности", callback_data: "set_cat:all" }],
+          [{ text: "🔥 Смотреть все горящие лоты", callback_data: "cmd_hot" }],
+        ];
+
+        await sendTelegramMessage(fromId, emptyMsg, {
+          reply_markup: { inline_keyboard: actionButtons },
+        });
+        return { ok: true };
       }
 
       const totalMatched = matched.length;
@@ -1609,11 +1626,8 @@ export async function handleTelegramUpdate(update: {
       const nextOffset = offset + 3;
       const hasMore = nextOffset < totalMatched;
 
-      const locLabel = getLocalityLabel(currentFilter.locality);
-      const catLabel = getCategoryLabel(currentFilter.category);
-
       const pageInfo = totalMatched > 3 ? ` [Лоты ${offset + 1}–${Math.min(offset + pageTenders.length, totalMatched)} из ${totalMatched}]` : "";
-      await sendTelegramMessage(fromId, `🎯 <b>ВАШИ ПОДХОДЯЩИЕ ТЕНДЕРЫ${pageInfo}\n(${locLabel} • ${catLabel}):</b>${headerNote}\n━━━━━━━━━━━━━━━━━━━━`);
+      await sendTelegramMessage(fromId, `🎯 <b>ВАШИ ПОДХОДЯЩИЕ ТЕНДЕРЫ${pageInfo}\n(${locLabel} • ${catLabel}):</b>\n━━━━━━━━━━━━━━━━━━━━`);
 
       for (const tender of pageTenders) {
         const card = formatTenderTelegramCard(tender);
@@ -1638,7 +1652,7 @@ export async function handleTelegramUpdate(update: {
         { text: "🔥 Горящие лоты", callback_data: "cmd_hot" },
       ]);
 
-      await sendTelegramMessage(fromId, hasMore ? `👇 <i>Нажмите кнопку ниже, чтобы продолжить просмотр:</i>` : `✅ <i>Вы просмотрели все доступные лоты по этому запросу.</i>`, {
+      await sendTelegramMessage(fromId, hasMore ? `👇 <i>Нажмите кнопку ниже, чтобы продолжить просмотр:</i>` : `✅ <i>Вы просмотрели все доступные лоты по этому фильтру.</i>`, {
         reply_markup: { inline_keyboard: navButtons },
       });
       return { ok: true };
@@ -1695,7 +1709,7 @@ export async function handleTelegramUpdate(update: {
       const now = Date.now();
       const cat = INDUSTRY_CATEGORIES.find((c) => c.id === currentFilter.category);
 
-      let matched = tenders
+      const matched = tenders
         .filter((t) => !t.endDate || t.endDate > now)
         .filter((t) => matchesTenderLocation(currentFilter.locality, t))
         .filter((t) => {
@@ -1706,12 +1720,29 @@ export async function handleTelegramUpdate(update: {
         })
         .filter((t) => !currentFilter.maxBudget || t.budget <= currentFilter.maxBudget);
 
-      if (matched.length === 0) {
-        matched = tenders.filter((t) => !t.endDate || t.endDate > now);
-        if (matched.length === 0) matched = tenders;
-      }
-
       const totalMatched = matched.length;
+
+      if (totalMatched === 0) {
+        const locLabel = getLocalityLabel(currentFilter.locality);
+        const catLabel = getCategoryLabel(currentFilter.category);
+        const budgetText = currentFilter.maxBudget > 0 ? `до ${moneyFormatter.format(currentFilter.maxBudget)}` : "Любой";
+        const emptyMsg = `🔍 <b>ПО ВАШЕМУ ФИЛЬТРУ НЕТ ЛОТОВ ДЛЯ ПРОСМОТРА</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+          `📍 <b>Регион:</b> ${locLabel}\n` +
+          `📁 <b>Сфера:</b> ${catLabel}\n` +
+          `💰 <b>Бюджет:</b> ${budgetText}\n\n` +
+          `<i>Нажмите кнопку ниже, чтобы изменить параметры:</i>`;
+        const actionButtons = [
+          [{ text: "💰 Увеличить бюджет до 50 млн ₸", callback_data: "set_budget:50000000" }],
+          [{ text: "🌐 Любой бюджет", callback_data: "set_budget:0" }],
+          [{ text: "⚙️ Изменить фильтр", callback_data: "open_filter_menu" }],
+        ];
+        if (query.message?.message_id) {
+          await editTelegramMessageText(fromId, query.message.message_id, emptyMsg, { reply_markup: { inline_keyboard: actionButtons } });
+        } else {
+          await sendTelegramMessage(fromId, emptyMsg, { reply_markup: { inline_keyboard: actionButtons } });
+        }
+        return { ok: true };
+      }
 
       // If finished all tenders
       if (offset >= totalMatched) {
@@ -2227,9 +2258,8 @@ export async function checkAndSendScheduledDigests(): Promise<{ delivered: numbe
       .slice(0, 3);
 
     if (matched.length === 0) {
-      matched = allTenders.filter((t) => !t.endDate || t.endDate > now).slice(0, 3);
+      continue;
     }
-    if (matched.length === 0) continue;
 
     const locLabel = getLocalityLabel(filter.locality);
     const catLabel = getCategoryLabel(filter.category);
