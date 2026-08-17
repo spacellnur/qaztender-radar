@@ -99,9 +99,9 @@ export function formatPaywallMessage(chatId: string | number, username?: string,
   const text = `🔒 <b>ВАШ БЕСПЛАТНЫЙ ДОСТУП ЗАВЕРШЁН</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
     `Чтобы продолжить находить прибыльные закупки и выигрывать тендеры:\n\n` +
     `💼 <b>ТАРИФНЫЕ ПЛАНЫ QAZTENDER RADAR:</b>\n` +
-    `🥉 <b>1 месяц (Стандарт)</b> — <code>14 990 ₸</code>\n` +
-    `🥈 <b>3 месяца (Выгодный -20%)</b> — <code>34 990 ₸</code> <i>(11 660 ₸/мес)</i>\n` +
-    `🥇 <b>12 месяцев (VIP Безлимит -45%)</b> — <code>99 000 ₸</code> <i>(8 250 ₸/мес + персональный менеджер)</i>\n\n` +
+    `🥉 <b>1 месяц (Стандарт)</b> — <code>4 990 ₸</code>\n` +
+    `🥈 <b>3 месяца (Выгодный -47%)</b> — <code>7 990 ₸</code> <i>(2 660 ₸/мес)</i>\n` +
+    `🥇 <b>12 месяцев (VIP Безлимит на 1 год -67%)</b> — <code>19 990 ₸</code> <i>(всего 1 660 ₸/мес)</i>\n\n` +
     `📲 <b>Оплата через Kaspi Gold / Kaspi Pay:</b>\n` +
     `Номер Kaspi: <code>87773828303</code> (Нурсултан А.)\n` +
     `В назначении перевода укажите ваш ID: <code>${chatId}</code>\n\n` +
@@ -847,24 +847,27 @@ export async function handleTelegramUpdate(update: {
     }
 
     if (text === "/pricing" || text === "/tariff" || text === "💼 Тарифы и связь" || text === "💬 Написать разработчику" || text === "/contact" || text === "/developer") {
-      const pricingMsg = `💼 <b>ТАРИФЫ И СВЯЗЬ С РАЗРАБОТЧИКОМ</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
-        `<b>QazTender Radar</b> предлагает гибкие индивидуальные тарифы для поставщиков и тендерных специалистов:\n\n` +
-        `🔹 <b>Индивидуальный специалист / ИП:</b>\n` +
-        `• До 3 регионов поиска и алертов\n` +
-        `• Мгновенные push-уведомления о новых лотах в Telegram\n` +
-        `• Интерактивные чек-листы и персональная воронка\n\n` +
-        `🏢 <b>Компания / ТОО (Корпоративный):</b>\n` +
-        `• Мониторинг по всему Казахстану (все 20 регионов)\n` +
-        `• Многопользовательский доступ для вашей команды\n` +
-        `• Делегирование задач сотрудникам и заметки по лотам\n` +
-        `• Прямая интеграция с реестром Госзакупок goszakup.gov.kz\n\n` +
-        `🤝 <i>Нажмите кнопку ниже, чтобы написать разработчику в личные сообщения и обсудить стоимость и спец-условия:</i>`;
+      const pricingMsg = `💼 <b>ТАРИФНЫЕ ПЛАНЫ QAZTENDER RADAR</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `Массовый доступ к госзакупкам Казахстана по супер-выгодным ценам:\n\n` +
+        `🥉 <b>1 месяц (Стандарт)</b> — <code>4 990 ₸</code>\n` +
+        `• Доступ ко всем 20 регионам Казахстана\n` +
+        `• Утренние, обеденные и вечерние push-рассылки\n` +
+        `• Умные чек-листы и персональная воронка лотов\n\n` +
+        `🥈 <b>3 месяца (Выгодный -47%)</b> — <code>7 990 ₸</code> <i>(всего 2 660 ₸/мес)</i>\n` +
+        `• Все функции платформы\n` +
+        `• Экономия почти 50% по сравнению с помесячной оплатой\n\n` +
+        `🥇 <b>12 месяцев (VIP Безлимит на 1 год -67%)</b> — <code>19 990 ₸</code> <i>(всего 1 660 ₸/мес)</i>\n` +
+        `• Целый год бесперебойного мониторинга тендеров\n` +
+        `• Максимальная выгода и приоритетная техподдержка\n\n` +
+        `📲 <b>Оплата через Kaspi Gold / Kaspi Pay:</b> <code>87773828303</code> (Нурсултан А.)`;
 
       await sendTelegramMessage(chatId, pricingMsg, {
         reply_markup: {
           inline_keyboard: [
+            [{ text: "💳 Оплатить через Kaspi (Реквизиты)", callback_data: "pay_kaspi" }],
+            [{ text: "🧾 Я оплатил (Отправить чек)", callback_data: "submit_receipt" }],
+            [{ text: "🎁 Получить +3 дня бесплатно (Пригласить друга)", callback_data: "cmd_ref" }],
             [{ text: "💬 Написать разработчику (@mielonur)", url: "https://t.me/mielonur" }],
-            [{ text: "📝 Подать заявку на доступ", callback_data: "apply_access" }],
           ],
         },
       });
@@ -1084,11 +1087,11 @@ export async function handleTelegramUpdate(update: {
           reply_markup: {
             inline_keyboard: [
               [
-                { text: "🥉 1 мес (14 990 ₸)", callback_data: `approve_sub:${chatId}:1` },
-                { text: "🥈 3 мес (34 990 ₸)", callback_data: `approve_sub:${chatId}:3` },
+                { text: "🥉 1 мес (4 990 ₸)", callback_data: `approve_sub:${chatId}:1` },
+                { text: "🥈 3 мес (7 990 ₸)", callback_data: `approve_sub:${chatId}:3` },
               ],
               [
-                { text: "🥇 12 мес (99 000 ₸)", callback_data: `approve_sub:${chatId}:12` },
+                { text: "🥇 12 мес (19 990 ₸)", callback_data: `approve_sub:${chatId}:12` },
                 { text: "❌ Отклонить", callback_data: `reject_sub:${chatId}` },
               ]
             ]
@@ -1453,9 +1456,9 @@ export async function handleTelegramUpdate(update: {
       await answerCallbackQuery(query.id);
       const payMsg = `💳 <b>ОПЛАТА ПОДПИСКИ QAZTENDER RADAR ЧЕРЕЗ KASPI</b>\n━━━━━━━━━━━━━━━━━━━━\n\n` +
         `💼 <b>ТАРИФНЫЕ ПЛАНЫ:</b>\n` +
-        `🥉 <b>1 месяц (Стандарт)</b> — <code>14 990 ₸</code>\n` +
-        `🥈 <b>3 месяца (Выгодный -20%)</b> — <code>34 990 ₸</code> <i>(11 660 ₸/мес)</i>\n` +
-        `🥇 <b>12 месяцев (VIP Безлимит -45%)</b> — <code>99 000 ₸</code> <i>(8 250 ₸/мес)</i>\n\n` +
+        `🥉 <b>1 месяц (Стандарт)</b> — <code>4 990 ₸</code>\n` +
+        `🥈 <b>3 месяца (Выгодный -47%)</b> — <code>7 990 ₸</code> <i>(2 660 ₸/мес)</i>\n` +
+        `🥇 <b>12 месяцев (VIP Безлимит на 1 год -67%)</b> — <code>19 990 ₸</code> <i>(1 660 ₸/мес)</i>\n\n` +
         `📲 <b>Реквизиты для перевода Kaspi Gold / Kaspi Pay:</b>\n` +
         `• Номер: <code>87773828303</code> (Нурсултан А.)\n` +
         `• В комментарии укажите ваш Telegram ID: <code>${fromId}</code>\n\n` +
@@ -1494,11 +1497,11 @@ export async function handleTelegramUpdate(update: {
           reply_markup: {
             inline_keyboard: [
               [
-                { text: "🥉 1 мес (14 990 ₸)", callback_data: `approve_sub:${fromId}:1` },
-                { text: "🥈 3 мес (34 990 ₸)", callback_data: `approve_sub:${fromId}:3` },
+                { text: "🥉 1 мес (4 990 ₸)", callback_data: `approve_sub:${fromId}:1` },
+                { text: "🥈 3 мес (7 990 ₸)", callback_data: `approve_sub:${fromId}:3` },
               ],
               [
-                { text: "🥇 12 мес (99 000 ₸)", callback_data: `approve_sub:${fromId}:12` },
+                { text: "🥇 12 мес (19 990 ₸)", callback_data: `approve_sub:${fromId}:12` },
                 { text: "❌ Отклонить", callback_data: `reject_sub:${fromId}` },
               ]
             ]
