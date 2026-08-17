@@ -119,10 +119,10 @@ export function formatPaywallMessage(chatId: string | number, username?: string,
 export const MAIN_INLINE_MENU = {
   inline_keyboard: [
     [{ text: "🎯 Мои тендеры", callback_data: "cmd_my_tenders" }, { text: "📁 Мои в работе", callback_data: "cmd_inwork" }],
-    [{ text: "🔥 Горящие лоты", callback_data: "cmd_hot" }, { text: "💎 Топ по сумме", callback_data: "cmd_top" }],
-    [{ text: "⚙️ Настроить фильтр", callback_data: "cmd_filter" }, { text: "🌐 Войти на сайт", callback_data: "cmd_web" }],
-    [{ text: "🎁 Пригласить друга (+3 дн.)", callback_data: "cmd_ref" }, { text: "💼 Тарифы и связь", callback_data: "cmd_pricing" }],
-    [{ text: "📈 Мой статус", callback_data: "cmd_status" }, { text: "ℹ️ Справка", callback_data: "cmd_info" }],
+    [{ text: "🔔 На отслеживании", callback_data: "cmd_watched" }, { text: "🔥 Горящие лоты", callback_data: "cmd_hot" }],
+    [{ text: "💎 Топ по сумме", callback_data: "cmd_top" }, { text: "⚙️ Настроить фильтр", callback_data: "cmd_filter" }],
+    [{ text: "🌐 Войти на сайт", callback_data: "cmd_web" }, { text: "🎁 Пригласить друга (+3 дн.)", callback_data: "cmd_ref" }],
+    [{ text: "💼 Тарифы и связь", callback_data: "cmd_pricing" }, { text: "📈 Мой статус", callback_data: "cmd_status" }],
   ],
 };
 
@@ -130,9 +130,9 @@ export const ADMIN_INLINE_MENU = {
   inline_keyboard: [
     [{ text: "👑 Главная Админ-панель CRM", callback_data: "cmd_admin_panel" }],
     [{ text: "💎 Платные клиенты", callback_data: "adm_list:paid" }, { text: "⏳ На триале", callback_data: "adm_list:trial" }],
-    [{ text: "🎯 Мои тендеры", callback_data: "cmd_my_tenders" }, { text: "🔥 Горящие лоты", callback_data: "cmd_hot" }],
-    [{ text: "⚙️ Настроить фильтр", callback_data: "cmd_filter" }, { text: "🌐 Войти на сайт", callback_data: "cmd_web" }],
-    [{ text: "🎁 Рефералы", callback_data: "cmd_ref" }, { text: "ℹ️ Справка", callback_data: "cmd_info" }],
+    [{ text: "🎯 Мои тендеры", callback_data: "cmd_my_tenders" }, { text: "🔔 На отслеживании", callback_data: "cmd_watched" }],
+    [{ text: "🔥 Горящие лоты", callback_data: "cmd_hot" }, { text: "⚙️ Настроить фильтр", callback_data: "cmd_filter" }],
+    [{ text: "🌐 Войти на сайт", callback_data: "cmd_web" }, { text: "🎁 Рефералы", callback_data: "cmd_ref" }],
   ],
 };
 
@@ -420,6 +420,7 @@ export async function registerBotCommands(): Promise<boolean> {
     const commands = [
       { command: "menu", description: "📋 Главное меню платформы" },
       { command: "tenders", description: "🎯 Мои подобранные тендеры" },
+      { command: "watched", description: "🔔 Мои отслеживаемые закупки и протоколы" },
       { command: "inwork", description: "📁 Мои закупки в работе" },
       { command: "hot", description: "🔥 Горящие лоты перед дедлайном" },
       { command: "top", description: "💎 Топ тендеров по бюджету" },
@@ -636,16 +637,19 @@ export function formatTenderTelegramCard(tender: TenderRecord, profile?: Company
   const buttons: Array<Array<{ text: string; url?: string; callback_data?: string }>> = [
     [
       { text: "🌐 На Goszakup", url: officialUrl },
-      { text: "📊 Подробный анализ", callback_data: `analyze:${tender.externalId}` },
+      { text: "📊 Анализ лота", callback_data: `analyze:${tender.externalId}` },
     ],
     [
-      { text: "★ В избранное", callback_data: `fav:${tender.externalId}` },
+      { text: "🔔 Отслеживать протокол", callback_data: `watch:${tender.externalId}` },
       { text: "📂 В работу", callback_data: `menu_stage:${tender.externalId}` },
     ],
     [
+      { text: "★ В избранное", callback_data: `fav:${tender.externalId}` },
       { text: "📑 Чек-лист", callback_data: `tasks:${tender.externalId}` },
       { text: "📦 Лоты", callback_data: `lots:${tender.externalId}` },
-      { text: "⛔ Скрыть", callback_data: `hide:${tender.externalId}` },
+    ],
+    [
+      { text: "⛔ Скрыть из ленты", callback_data: `hide:${tender.externalId}` },
     ],
   ];
 
@@ -941,6 +945,76 @@ export async function handleTelegramUpdate(update: {
       for (const tender of top) {
         const card = formatTenderTelegramCard(tender);
         await sendTelegramMessage(chatId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
+      }
+      return { ok: true };
+    }
+
+    if (text === "/watched" || text === "/tracking" || text === "🔔 На отслеживании" || text === "🔔 Отслеживаемые") {
+      const sub = await getTelegramSubscriberByChatId(chatId);
+      const ownerKey = sub ? `user:${sub.userId}` : `admin:${chatId}`;
+      const entries = await listTenderWorkflow(ownerKey);
+      const watchedEntries = entries.filter((e) => e.stage === "studying" || e.isFavorite);
+
+      if (watchedEntries.length === 0) {
+        await sendTelegramMessage(chatId, `🔔 <b>У ВАС ПОКА НЕТ ОТСЛЕЖИВАЕМЫХ ЗАКУПОК</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+          `Чтобы поставить тендер на контроль и получать уведомления об изменении сроков, протоколе вскрытия и протоколе итогов:\n\n` +
+          `👉 Нажмите кнопку <b>«🔔 Отслеживать протокол»</b> на карточке любого тендера!`, {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🎯 Подобрать тендеры", callback_data: "cmd_my_tenders" }],
+              [{ text: "🔥 Горящие лоты", callback_data: "cmd_hot" }],
+            ],
+          },
+        });
+        return { ok: true };
+      }
+
+      const allTenders = await listTenders(500);
+      const tenderMap = new Map(allTenders.map((t) => [t.externalId, t]));
+
+      await sendTelegramMessage(chatId, `🔔 <b>ВАШИ ОТСЛЕЖИВАЕМЫЕ ЗАКУПКИ (${watchedEntries.length}):</b>\n━━━━━━━━━━━━━━━━━━━━\nБот непрерывно мониторит протоколы и сроки по этим лотам:`);
+
+      for (const entry of watchedEntries.slice(0, 5)) {
+        const tender = tenderMap.get(entry.tenderId) || await getTenderById(entry.tenderId);
+        if (tender) {
+          const card = formatTenderTelegramCard(tender, null, undefined, false, entry.stage);
+          await sendTelegramMessage(chatId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
+        }
+      }
+      return { ok: true };
+    }
+
+    if (text === "/inwork" || text === "📁 Мои в работе" || text === "📁 В работе") {
+      const sub = await getTelegramSubscriberByChatId(chatId);
+      const ownerKey = sub ? `user:${sub.userId}` : `admin:${chatId}`;
+      const entries = await listTenderWorkflow(ownerKey);
+      const inWork = entries.filter((e) => e.stage !== "none" && e.stage !== "skipped");
+
+      if (inWork.length === 0) {
+        await sendTelegramMessage(chatId, `📁 <b>У ВАС ПОКА НЕТ ЗАКУПОК В РАБОТЕ</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+          `Чтобы взять лот в работу и отслеживать этапы (Изучаем, Готовим заявку, Подали, Победили):\n\n` +
+          `👉 Нажмите кнопку <b>«📂 В работу»</b> на карточке интересующего тендера!`, {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🎯 Подобрать тендеры", callback_data: "cmd_my_tenders" }],
+              [{ text: "🔥 Горящие лоты", callback_data: "cmd_hot" }],
+            ],
+          },
+        });
+        return { ok: true };
+      }
+
+      const allTenders = await listTenders(500);
+      const tenderMap = new Map(allTenders.map((t) => [t.externalId, t]));
+
+      await sendTelegramMessage(chatId, `📁 <b>ВАШИ ЗАКУПКИ В РАБОТЕ (${inWork.length}):</b>\n━━━━━━━━━━━━━━━━━━━━`);
+
+      for (const entry of inWork.slice(0, 5)) {
+        const tender = tenderMap.get(entry.tenderId) || await getTenderById(entry.tenderId);
+        if (tender) {
+          const card = formatTenderTelegramCard(tender, null, undefined, false, entry.stage);
+          await sendTelegramMessage(chatId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
+        }
       }
       return { ok: true };
     }
@@ -1636,6 +1710,88 @@ export async function handleTelegramUpdate(update: {
       }
 
       await sendTelegramMessage(targetChatId, `⛔ <b>Ваша заявка на доступ отклонена администратором.</b>`);
+      return { ok: true };
+    }
+
+    // Watch / Track tender and protocol changes
+    if (data.startsWith("watch:")) {
+      const tenderId = data.slice(6);
+      const sub = await getTelegramSubscriberByChatId(fromId);
+      const ownerKey = sub ? `user:${sub.userId}` : `admin:${fromId}`;
+      const tender = await getTenderById(tenderId);
+
+      const existingEntries = await listTenderWorkflow(ownerKey);
+      const existing = existingEntries.find((e) => e.tenderId === tenderId);
+      const isAlreadyWatched = existing && (existing.stage === "studying" || existing.isFavorite);
+
+      if (isAlreadyWatched) {
+        await saveTenderWorkflow(ownerKey, tenderId, false, "none");
+        await answerCallbackQuery(query.id, "🔕 Отслеживание отключено.");
+        await sendTelegramMessage(fromId, `🔕 <b>Закупка № ${tender?.numberAnno || tenderId} снята с отслеживания.</b>`);
+      } else {
+        await saveTenderWorkflow(ownerKey, tenderId, true, "studying");
+        await answerCallbackQuery(query.id, "🔔 Закупка поставлена на отслеживание!", true);
+
+        const officialUrl = tender ? getGoszakupUrl(tender) : `https://goszakup.gov.kz`;
+        const watchAlert = `🔔 <b>ЗАКУПКА ПОСТАВЛЕНА НА ОТСЛЕЖИВАНИЕ!</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+          `📋 <b>Объявление:</b> № <code>${tender?.numberAnno || tenderId}</code>\n` +
+          `📌 <b>Наименование:</b> <b>${tender?.title || "Тендер"}</b>\n` +
+          `💰 <b>Бюджет:</b> <code>${moneyFormatter.format(tender?.budget || 0)}</code>\n` +
+          `🏢 <b>Заказчик:</b> ${tender?.buyer || "Организатор"}\n` +
+          `⏳ <b>Текущий статус:</b> <code>${tender?.statusName || "Прием заявок"}</code>\n\n` +
+          `🤖 <b>Что будет мониторить бот:</b>\n` +
+          `• ⏳ <b>Продление дедлайна:</b> если заказчик изменит дату окончания приёма заявок.\n` +
+          `• 📝 <b>Протокол вскрытия / предварительного допуска:</b> список допущенных и отклоненных участников.\n` +
+          `• 🏆 <b>Протокол итогов:</b> победитель, ценовые предложения и скидки конкурентов.\n` +
+          `• ❌ <b>Отмена или пересмотр</b> закупки.\n\n` +
+          `<i>Все ваши отслеживаемые закупки доступны в меню по кнопке «🔔 На отслеживании».</i>`;
+
+        await sendTelegramMessage(fromId, watchAlert, {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🌐 Открыть на Goszakup", url: officialUrl }],
+              [{ text: "🔔 Посмотреть все на отслеживании", callback_data: "cmd_watched" }],
+              [{ text: "🔕 Снять с отслеживания", callback_data: `watch:${tenderId}` }],
+            ],
+          },
+        });
+      }
+      return { ok: true };
+    }
+
+    if (data === "cmd_watched" || data.startsWith("cmd_watched:")) {
+      await answerCallbackQuery(query.id, "Загружаем отслеживаемые закупки...");
+      const sub = await getTelegramSubscriberByChatId(fromId);
+      const ownerKey = sub ? `user:${sub.userId}` : `admin:${fromId}`;
+      const entries = await listTenderWorkflow(ownerKey);
+      const watchedEntries = entries.filter((e) => e.stage === "studying" || e.isFavorite);
+
+      if (watchedEntries.length === 0) {
+        await sendTelegramMessage(fromId, `🔔 <b>У ВАС ПОКА НЕТ ОТСЛЕЖИВАЕМЫХ ЗАКУПОК</b>\n━━━━━━━━━━━━━━━━━━━━\n` +
+          `Чтобы поставить тендер на контроль и получать уведомления об изменении сроков, протоколе вскрытия и протоколе итогов:\n\n` +
+          `👉 Нажмите кнопку <b>«🔔 Отслеживать протокол»</b> на карточке любого тендера!`, {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🎯 Подобрать тендеры", callback_data: "cmd_my_tenders" }],
+              [{ text: "🔥 Горящие лоты", callback_data: "cmd_hot" }],
+            ],
+          },
+        });
+        return { ok: true };
+      }
+
+      const allTenders = await listTenders(500);
+      const tenderMap = new Map(allTenders.map((t) => [t.externalId, t]));
+
+      await sendTelegramMessage(fromId, `🔔 <b>ВАШИ ОТСЛЕЖИВАЕМЫЕ ЗАКУПКИ (${watchedEntries.length}):</b>\n━━━━━━━━━━━━━━━━━━━━\nБот непрерывно мониторит протоколы и сроки по этим лотам.`);
+
+      for (const entry of watchedEntries.slice(0, 5)) {
+        const tender = tenderMap.get(entry.tenderId) || await getTenderById(entry.tenderId);
+        if (tender) {
+          const card = formatTenderTelegramCard(tender, null, undefined, false, entry.stage);
+          await sendTelegramMessage(fromId, card.text, { reply_markup: { inline_keyboard: card.buttons } });
+        }
+      }
       return { ok: true };
     }
 
